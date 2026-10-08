@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 import threading
 from collections.abc import Callable
 
 from common.protocol import CommandType, Frame, FrameCodec, FrameType
-from common.security import require_loopback
+from common.security import require_loopback, require_private_network
 
 
 class ConsoleNetworkClient:
@@ -18,7 +19,11 @@ class ConsoleNetworkClient:
         actor: str = "console",
     ):
         self.host = host
-        require_loopback(host)
+        allow_private_network = os.environ.get("RPMC_ALLOW_PRIVATE_NETWORK", "0") in {"1", "true", "TRUE", "yes"}
+        if allow_private_network:
+            require_private_network(host)
+        else:
+            require_loopback(host)
         self.port = port
         self.token = token
         self.actor = actor

@@ -13,7 +13,7 @@ from agent.agent_main import AgentClient
 from agent.handler import CommandHandler
 from agent.screen import ScreenCaptureService
 from common.protocol import CommandType, Frame, FrameCodec, FrameType
-from common.security import PathValidator, SecurityError, require_loopback
+from common.security import PathValidator, SecurityError, require_loopback, require_private_network
 from console.network import ConsoleNetworkClient
 from server.audit import AuditLogger
 from server.listener import ServerListener
@@ -92,6 +92,14 @@ class AgentAndSecurityTests(unittest.TestCase):
         require_loopback("localhost")
         with self.assertRaises(ValueError):
             require_loopback("192.0.2.10")
+
+    def test_private_network_hosts_are_allowed_for_lan_mode(self):
+        require_private_network("127.0.0.1")
+        require_private_network("localhost")
+        require_private_network("192.168.1.25")
+        require_private_network("10.0.0.5")
+        with self.assertRaises(ValueError):
+            require_private_network("8.8.8.8")
 
     def test_process_termination_requires_local_opt_in(self):
         handler = CommandHandler()

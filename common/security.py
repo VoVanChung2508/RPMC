@@ -32,6 +32,24 @@ def require_loopback(host: str) -> None:
     raise ValueError("RPMC demo connections are restricted to loopback; remote TLS is not implemented")
 
 
+def require_private_network(host: str) -> None:
+    try:
+        ip = ipaddress.ip_address(host)
+        if ip.is_loopback or ip.is_private or ip.is_unspecified:
+            return
+    except ValueError:
+        if host.lower() == "localhost":
+            return
+    raise ValueError("RPMC LAN mode accepts only loopback or private addresses; public hosts are not allowed")
+
+
+def require_trusted_host(host: str, *, allow_private_network: bool = False) -> None:
+    if allow_private_network:
+        require_private_network(host)
+        return
+    require_loopback(host)
+
+
 class ChecksumUtil:
     @staticmethod
     def sha256_bytes(data: bytes) -> str:

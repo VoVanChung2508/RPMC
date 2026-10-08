@@ -13,6 +13,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from common.protocol import CommandType, Frame, FrameCodec, FrameType
+from common.security import require_loopback, require_private_network
 from server.audit import AuditLogger
 from server.dispatcher import CommandDispatcher
 from server.rbac import Role
@@ -58,12 +59,14 @@ class ServerListener:
         self._screen_streams: dict[str, threading.Event] = {}
         self._screen_streams_lock = threading.Lock()
 
+        allow_private_network = os.environ.get("RPMC_ALLOW_PRIVATE_NETWORK", "0") in {"1", "true", "TRUE", "yes"}
         try:
-            is_loopback = ipaddress.ip_address(host).is_loopback
-        except ValueError:
-            is_loopback = host.lower() == "localhost"
-        if not is_loopback:
-            raise ValueError("RPMC currently binds to loopback only; remote access requires TLS support")
+            if allow_private_network:
+                require_private_network(host)
+            else:
+                require_loopback(host)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
 
     @property
     def bound_port(self) -> int:
@@ -81,7 +84,8 @@ class ServerListener:
         self._server_socket.bind((self.host, self.port))
         self._server_socket.listen(32)
         self._server_socket.settimeout(0.5)
-        print(f"RPMC Server listening on {self.host}:{self.bound_port} (loopback only)")
+        mode = "LAN/private network" if os.environ.get("RPMC_ALLOW_PRIVATE_NETWORK", "0") in {"1", "true", "TRUE", "yes"} else "loopback only"
+        print(f"RPMC Server listening on {self.host}:{self.bound_port} ({mode})")
         try:
             while not self._stop_event.is_set():
                 try:
