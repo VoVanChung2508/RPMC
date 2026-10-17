@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import webbrowser
 from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
@@ -16,7 +17,7 @@ def build_exam_po(root, request):
 
     ctk.CTkLabel(
         header_box,
-        text="🎓 PRODUCT OWNER / GIẢNG VIÊN (CẤU HÌNH QUY CHẾ & BÁO CÁO TỔNG KẾT)",
+        text="🎓 PRODUCT OWNER / GIẢNG VIÊN (CẤU HÌNH KỲ THI & BÁO CÁO TỔNG KẾT)",
         font=ctk.CTkFont(family=CyberpunkTheme.FONT, size=18, weight="bold"),
         text_color=CyberpunkTheme.PURPLE,
     ).pack(side="left", padx=16, pady=12)
@@ -32,51 +33,197 @@ def build_exam_po(root, request):
     )
     btn_refresh.pack(side="right", padx=16, pady=12)
 
-    # Split: Left (Config Panel), Right (Report & Audit Panel)
+    # Split: Left (Exam Creation & Rules Config), Right (Report & Audit Panel)
     split_box = ctk.CTkFrame(frame, fg_color="transparent")
     split_box.pack(fill="both", expand=True, padx=12, pady=4)
 
-    # Left: Exam Rules Configuration
-    left_cfg = ctk.CTkFrame(split_box, width=380, fg_color=CyberpunkTheme.PANEL_BG, corner_radius=12)
-    left_cfg.pack(side="left", fill="y", padx=(0, 6))
-    left_cfg.pack_propagate(False)
+    # Left: Scrollable configuration panel
+    left_cfg = ctk.CTkScrollableFrame(split_box, width=420, fg_color=CyberpunkTheme.PANEL_BG, corner_radius=12)
+    left_cfg.pack(side="left", fill="both", padx=(0, 6))
 
+    # --- KHUNG 1: NHẬP ĐỀ TỪ WORD (MỞ TRANG EXAM EDITOR) ---
+    def open_word_importer():
+        editor_port = os.environ.get("EXAM_EDITOR_PORT", "8082")
+        url = f"http://127.0.0.1:{editor_port}/"
+        webbrowser.open(url)
+
+    btn_open_editor = ctk.CTkButton(
+        left_cfg,
+        text="📂 Nhập Đề Từ File Word (.docx)",
+        height=38,
+        fg_color=CyberpunkTheme.CYAN,
+        text_color="#000000",
+        font=ctk.CTkFont(weight="bold"),
+        command=open_word_importer,
+    )
+    btn_open_editor.pack(fill="x", padx=16, pady=(14, 2))
     ctk.CTkLabel(
         left_cfg,
-        text="Thiết Lập Quy Chế Phòng Thi",
+        text="*Mở trang web http://127.0.0.1:8082 để tải lên, chỉnh sửa và lưu đề",
+        font=ctk.CTkFont(size=11),
+        text_color=CyberpunkTheme.TEXT_MUTED,
+    ).pack(anchor="w", padx=16, pady=(0, 12))
+
+    # --- KHUNG 2: TẠO KỲ THI TỪ NGÂN HÀNG ĐỀ ---
+    ctk.CTkLabel(
+        left_cfg,
+        text="1. Tạo Kỳ Thi Từ Ngân Hàng Đề",
         font=ctk.CTkFont(family=CyberpunkTheme.FONT, size=15, weight="bold"),
         text_color=CyberpunkTheme.TEXT_WHITE,
-    ).pack(anchor="w", padx=16, pady=(14, 12))
+    ).pack(anchor="w", padx=16, pady=(4, 8))
 
-    # Initial Score
-    ctk.CTkLabel(left_cfg, text="Điểm ban đầu (thang điểm):", font=ctk.CTkFont(size=12)).pack(anchor="w", padx=16, pady=(4, 2))
-    entry_init_score = ctk.CTkEntry(left_cfg)
-    entry_init_score.pack(fill="x", padx=16, pady=(0, 8))
-    entry_init_score.insert(0, "10.0")
+    ctk.CTkLabel(left_cfg, text="Chọn ngân hàng đề thi:", font=ctk.CTkFont(size=12)).pack(anchor="w", padx=16, pady=(4, 2))
 
-    # Penalty per violation
-    ctk.CTkLabel(left_cfg, text="Mức trừ điểm / mỗi lần vi phạm:", font=ctk.CTkFont(size=12)).pack(anchor="w", padx=16, pady=(4, 2))
-    entry_penalty = ctk.CTkEntry(left_cfg)
-    entry_penalty.pack(fill="x", padx=16, pady=(0, 8))
-    entry_penalty.insert(0, "1.0")
+    bank_items: list[dict] = []
+    combo_banks = ctk.CTkComboBox(left_cfg, values=["-- Đang tải ngân hàng đề... --"], state="readonly")
+    combo_banks.pack(fill="x", padx=16, pady=(0, 8))
 
-    # Max violations
-    ctk.CTkLabel(left_cfg, text="Số lần vi phạm tối đa (bị khóa bài):", font=ctk.CTkFont(size=12)).pack(anchor="w", padx=16, pady=(4, 2))
-    entry_max_viol = ctk.CTkEntry(left_cfg)
-    entry_max_viol.pack(fill="x", padx=16, pady=(0, 8))
-    entry_max_viol.insert(0, "3")
+    ctk.CTkLabel(left_cfg, text="Tên kỳ thi:", font=ctk.CTkFont(size=12)).pack(anchor="w", padx=16, pady=(4, 2))
+    entry_exam_name = ctk.CTkEntry(left_cfg)
+    entry_exam_name.pack(fill="x", padx=16, pady=(0, 8))
+    entry_exam_name.insert(0, "Kỳ Thi Môn Lập Trình Mạng")
 
-    # Duration
+    ctk.CTkLabel(left_cfg, text="Số câu hỏi (để trống = lấy toàn bộ):", font=ctk.CTkFont(size=12)).pack(anchor="w", padx=16, pady=(4, 2))
+    entry_q_count = ctk.CTkEntry(left_cfg, placeholder_text="Ví dụ: 20 hoặc để trống")
+    entry_q_count.pack(fill="x", padx=16, pady=(0, 8))
+
     ctk.CTkLabel(left_cfg, text="Thời gian làm bài thi (phút):", font=ctk.CTkFont(size=12)).pack(anchor="w", padx=16, pady=(4, 2))
     entry_duration = ctk.CTkEntry(left_cfg)
     entry_duration.pack(fill="x", padx=16, pady=(0, 8))
     entry_duration.insert(0, "45")
 
-    # Exam Title
-    ctk.CTkLabel(left_cfg, text="Tiêu đề kỳ thi:", font=ctk.CTkFont(size=12)).pack(anchor="w", padx=16, pady=(4, 2))
-    entry_title = ctk.CTkEntry(left_cfg)
-    entry_title.pack(fill="x", padx=16, pady=(0, 16))
-    entry_title.insert(0, "ĐỀ THI MÔN LẬP TRÌNH MẠNG")
+    var_shuffle = ctk.BooleanVar(value=True)
+    chk_shuffle = ctk.CTkCheckBox(left_cfg, text="Xáo trộn câu hỏi & thứ tự đáp án (Shuffle)", variable=var_shuffle)
+    chk_shuffle.pack(anchor="w", padx=16, pady=(4, 12))
+
+    def on_create_exam():
+        sel = combo_banks.get()
+        if not sel or not bank_items or sel.startswith("--"):
+            messagebox.showwarning("Cảnh báo", "Vui lòng chọn một ngân hàng đề hợp lệ!")
+            return
+
+        # Tìm bank_id từ selection
+        selected_bank = None
+        for b in bank_items:
+            disp = f"#{b['id']} - {b['title']} ({b.get('question_count', 0)} câu)"
+            if disp == sel:
+                selected_bank = b
+                break
+
+        if not selected_bank:
+            messagebox.showwarning("Cảnh báo", "Không tìm thấy ngân hàng đề được chọn!")
+            return
+
+        exam_title = entry_exam_name.get().strip()
+        if not exam_title:
+            messagebox.showerror("Lỗi", "Vui lòng nhập tên kỳ thi!")
+            return
+
+        try:
+            dur = int(entry_duration.get().strip())
+            q_cnt_raw = entry_q_count.get().strip()
+            q_cnt = int(q_cnt_raw) if q_cnt_raw else None
+        except ValueError:
+            messagebox.showerror("Lỗi", "Thời gian và số lượng câu hỏi phải là số nguyên hợp lệ!")
+            return
+
+        def on_exam_created(res):
+            exam = res.get("exam", {})
+            messagebox.showinfo("Thành công", f"Đã tạo và kích hoạt kỳ thi #{exam.get('id')}:\n{exam.get('title')}")
+            load_all_data()
+
+        request(
+            "exam.create",
+            on_exam_created,
+            bank_id=selected_bank["id"],
+            title=exam_title,
+            duration_minutes=dur,
+            question_count=q_cnt,
+            shuffle=var_shuffle.get(),
+        )
+
+    btn_create_exam = ctk.CTkButton(
+        left_cfg,
+        text="🚀 Tạo & Kích Hoạt Kỳ Thi Này",
+        height=36,
+        fg_color=CyberpunkTheme.PURPLE,
+        font=ctk.CTkFont(weight="bold"),
+        command=on_create_exam,
+    )
+    btn_create_exam.pack(fill="x", padx=16, pady=(0, 12))
+
+    # --- KHUNG HIỂN THỊ KỲ THI HIỆN TẠI VÀ ĐIỀU KHIỂN BẮT ĐẦU/KẾT THÚC ---
+    active_box = ctk.CTkFrame(left_cfg, fg_color=CyberpunkTheme.PANEL_BORDER, corner_radius=8)
+    active_box.pack(fill="x", padx=16, pady=(0, 14))
+
+    lbl_active_title = ctk.CTkLabel(
+        active_box,
+        text="Trạng thái kỳ thi: Đang tải...",
+        font=ctk.CTkFont(size=12, weight="bold"),
+        text_color=CyberpunkTheme.CYAN,
+        wraplength=360,
+        justify="left",
+    )
+    lbl_active_title.pack(anchor="w", padx=10, pady=(8, 4))
+
+    lbl_active_status = ctk.CTkLabel(
+        active_box,
+        text="Trạng thái: Chưa bắt đầu",
+        font=ctk.CTkFont(size=11),
+        text_color=CyberpunkTheme.TEXT_MUTED,
+    )
+    lbl_active_status.pack(anchor="w", padx=10, pady=(0, 8))
+
+    btn_ctrl_row = ctk.CTkFrame(active_box, fg_color="transparent")
+    btn_ctrl_row.pack(fill="x", padx=10, pady=(0, 8))
+
+    def set_exam_status(new_status: str):
+        def on_st_updated(res):
+            messagebox.showinfo("Thông báo", f"Đã chuyển trạng thái kỳ thi sang: {new_status}")
+            load_all_data()
+
+        request("exam.status.set", on_st_updated, status=new_status)
+
+    btn_start_exam = ctk.CTkButton(
+        btn_ctrl_row,
+        text="▶ Bắt Đầu Thi",
+        fg_color=CyberpunkTheme.GREEN,
+        width=160,
+        command=lambda: set_exam_status("IN_PROGRESS"),
+    )
+    btn_start_exam.pack(side="left", padx=(0, 4))
+
+    btn_stop_exam = ctk.CTkButton(
+        btn_ctrl_row,
+        text="⏹ Kết Thúc Thi",
+        fg_color=CyberpunkTheme.RED,
+        width=160,
+        command=lambda: set_exam_status("FINISHED"),
+    )
+    btn_stop_exam.pack(side="right", padx=(4, 0))
+
+    # --- KHUNG 3: THIẾT LẬP QUY CHẾ ĐIỂM PHẠT ---
+    ctk.CTkLabel(
+        left_cfg,
+        text="2. Quy Chế Điểm Phạt & Vi Phạm",
+        font=ctk.CTkFont(family=CyberpunkTheme.FONT, size=15, weight="bold"),
+        text_color=CyberpunkTheme.TEXT_WHITE,
+    ).pack(anchor="w", padx=16, pady=(10, 8))
+
+    ctk.CTkLabel(left_cfg, text="Điểm ban đầu (thang điểm):", font=ctk.CTkFont(size=12)).pack(anchor="w", padx=16, pady=(4, 2))
+    entry_init_score = ctk.CTkEntry(left_cfg)
+    entry_init_score.pack(fill="x", padx=16, pady=(0, 8))
+    entry_init_score.insert(0, "10.0")
+
+    ctk.CTkLabel(left_cfg, text="Mức trừ điểm / mỗi lần vi phạm:", font=ctk.CTkFont(size=12)).pack(anchor="w", padx=16, pady=(4, 2))
+    entry_penalty = ctk.CTkEntry(left_cfg)
+    entry_penalty.pack(fill="x", padx=16, pady=(0, 8))
+    entry_penalty.insert(0, "1.0")
+
+    ctk.CTkLabel(left_cfg, text="Số lần vi phạm tối đa (bị khóa bài):", font=ctk.CTkFont(size=12)).pack(anchor="w", padx=16, pady=(4, 2))
+    entry_max_viol = ctk.CTkEntry(left_cfg)
+    entry_max_viol.pack(fill="x", padx=16, pady=(0, 12))
+    entry_max_viol.insert(0, "3")
 
     def save_configuration():
         try:
@@ -85,7 +232,7 @@ def build_exam_po(root, request):
                 "penalty_per_violation": float(entry_penalty.get().strip()),
                 "max_violations": int(entry_max_viol.get().strip()),
                 "duration_minutes": int(entry_duration.get().strip()),
-                "exam_title": entry_title.get().strip(),
+                "exam_title": entry_exam_name.get().strip(),
             }
         except ValueError:
             messagebox.showerror("Lỗi", "Vui lòng nhập số hợp lệ vào các trường cấu hình!")
@@ -99,13 +246,13 @@ def build_exam_po(root, request):
 
     btn_save_cfg = ctk.CTkButton(
         left_cfg,
-        text="💾 Áp Dụng Cấu Hình Mới",
-        height=38,
+        text="💾 Áp Dụng Quy Chế Phạt",
+        height=36,
         fg_color=CyberpunkTheme.PURPLE,
         font=ctk.CTkFont(weight="bold"),
         command=save_configuration,
     )
-    btn_save_cfg.pack(fill="x", padx=16, pady=(4, 12))
+    btn_save_cfg.pack(fill="x", padx=16, pady=(0, 20))
 
     # Right: Results Summary & Export
     right_report = ctk.CTkFrame(split_box, fg_color=CyberpunkTheme.PANEL_BG, corner_radius=12)
@@ -160,6 +307,26 @@ def build_exam_po(root, request):
     scores_scroll.pack(fill="both", expand=True, padx=12, pady=(0, 12))
 
     def load_all_data():
+        def on_banks(res):
+            nonlocal bank_items
+            bank_items = res.get("banks", [])
+            if bank_items:
+                values = [f"#{b['id']} - {b['title']} ({b.get('question_count', 0)} câu)" for b in bank_items]
+                combo_banks.configure(values=values)
+                combo_banks.set(values[0])
+            else:
+                combo_banks.configure(values=["-- Chưa có ngân hàng đề nào (Hãy bấm Nhập đề) --"])
+                combo_banks.set("-- Chưa có ngân hàng đề nào (Hãy bấm Nhập đề) --")
+
+        def on_active_exam(res):
+            exam = res.get("exam")
+            if exam:
+                lbl_active_title.configure(
+                    text=f"Kỳ thi hiện tại: #{exam.get('id')} - {exam.get('title')}\nNgân hàng đề: {exam.get('bank_title', '')} | Thời gian: {exam.get('duration_minutes')}p"
+                )
+            else:
+                lbl_active_title.configure(text="Chưa có kỳ thi nào được chọn (Hãy tạo kỳ thi ở trên)")
+
         def on_cfg(res):
             cfg = res.get("config", {})
             entry_init_score.delete(0, "end")
@@ -170,8 +337,8 @@ def build_exam_po(root, request):
             entry_max_viol.insert(0, str(cfg.get("max_violations", 3)))
             entry_duration.delete(0, "end")
             entry_duration.insert(0, str(cfg.get("duration_minutes", 45)))
-            entry_title.delete(0, "end")
-            entry_title.insert(0, str(cfg.get("exam_title", "")))
+            st = str(cfg.get("status", "Chưa bắt đầu"))
+            lbl_active_status.configure(text=f"Trạng thái hệ thống: {st}")
 
         def on_students(res):
             for w in scores_scroll.winfo_children():
@@ -202,6 +369,8 @@ def build_exam_po(root, request):
 
                 ctk.CTkLabel(row, text=status, width=100, anchor="center", text_color=st_color).pack(side="left", padx=4)
 
+        request("exam.banks.list", on_banks)
+        request("exam.active.get", on_active_exam)
         request("exam.config.get", on_cfg)
         request("exam.students.list", on_students)
 

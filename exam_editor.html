@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nhập đề từ Word - RPMC</title>
+<style>
+  :root {
+    --bg:#f4f6fb; --card:#fff; --ink:#1c2333; --muted:#667085; --line:#d9dfec;
+    --brand:#2f6df6; --ok:#12a150; --bad:#d92d20; --warn:#fff4e5;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 system-ui,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--ink); }
+  header { background:#16213e; color:#fff; padding:14px 24px; font-weight:600; font-size:17px; }
+  main { max-width:900px; margin:24px auto; padding:0 16px 80px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin-bottom:16px; }
+  h2 { margin:0 0 10px; font-size:16px; }
+  label { display:block; font-size:13px; color:var(--muted); margin-bottom:4px; }
+  input[type=text], input[type=password], textarea {
+    width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:7px; font:inherit; background:#fff; color:inherit;
+  }
+  textarea { resize:vertical; min-height:56px; }
+  input:focus, textarea:focus { outline:2px solid var(--brand); outline-offset:-1px; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; }
+  .row > div { flex:1 1 220px; }
+  #drop { border:2px dashed #aab4cf; border-radius:10px; padding:28px; text-align:center; color:var(--muted); cursor:pointer; transition:.15s; }
+  #drop.over { border-color:var(--brand); background:#eef3ff; color:var(--brand); }
+  #drop strong { color:var(--ink); }
+  .hint { font-size:12.5px; color:var(--muted); margin-top:8px; }
+  pre.sample { background:#f1f3f9; padding:10px 12px; border-radius:7px; font-size:13px; margin:8px 0 0; overflow:auto; }
+  .q { border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:12px; background:#fff; }
+  .q.invalid { border-color:var(--bad); background:#fff8f7; }
+  .qhead { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  .qno { font-weight:700; }
+  .opt { display:flex; align-items:center; gap:8px; margin-top:8px; }
+  .opt .lbl { width:22px; font-weight:700; text-align:center; }
+  .opt input[type=radio] { width:18px; height:18px; accent-color:var(--ok); flex:none; }
+  .opt.correct input[type=text] { border-color:var(--ok); background:#f0fbf4; }
+  button { font:inherit; padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:#fff; cursor:pointer; }
+  button:hover { background:#f1f4fb; }
+  button.primary { background:var(--brand); border-color:var(--brand); color:#fff; font-weight:600; }
+  button.primary:hover { background:#2559cc; }
+  button.danger { color:var(--bad); }
+  button:disabled { opacity:.55; cursor:not-allowed; }
+  .msg { padding:10px 12px; border-radius:8px; margin-bottom:12px; font-size:14px; }
+  .msg.err { background:#fdecea; color:#912018; border:1px solid #f4b6b0; }
+  .msg.warn { background:var(--warn); color:#7a4a00; border:1px solid #f3d19e; }
+  .msg.ok { background:#e8f7ee; color:#0b6b36; border:1px solid #a9dfc0; }
+  .msg ul { margin:6px 0 0 18px; padding:0; }
+  .bar { position:sticky; bottom:0; background:rgba(244,246,251,.95); backdrop-filter:blur(4px);
+         border-top:1px solid var(--line); padding:12px 16px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+  .hidden { display:none !important; }
+  .count { color:var(--muted); font-size:13px; font-weight:400; }
+</style>
+</head>
+<body>
+<header>RPMC · Nhập đề từ file Word</header>
+<main>
+
+  <section class="card" id="authCard">
+    <h2>1. Token quản trị</h2>
+    <label for="token">Nhập RPMC_ADMIN_TOKEN (chỉ lưu trong tab này)</label>
+    <input type="password" id="token" autocomplete="off" placeholder="Token trong file .env">
+  </section>
+
+  <section class="card">
+    <h2>2. Chọn file đề (.docx)</h2>
+    <div id="drop" tabindex="0" role="button" aria-label="Chọn hoặc kéo thả file Word">
+      <strong>Kéo thả file .docx vào đây</strong> hoặc bấm để chọn file
+      <input type="file" id="file" accept=".docx" class="hidden">
+    </div>
+    <div class="hint">Tối đa 10 MiB. Mỗi câu theo mẫu:</div>
+    <pre class="sample">Câu 1. Giao thức nào là hướng kết nối?
+A. UDP
+B. TCP
+C. ICMP
+D. ARP
+Đáp án: B</pre>
+  </section>
+
+  <div id="messages"></div>
+
+  <section id="editor" class="hidden">
+    <div class="card">
+      <h2>3. Thông tin ngân hàng đề</h2>
+      <div class="row">
+        <div><label for="title">Tên ngân hàng đề *</label><input type="text" id="title" placeholder="VD: Mạng máy tính - Giữa kỳ"></div>
+        <div><label for="subject">Môn học</label><input type="text" id="subject" placeholder="VD: Lập trình mạng"></div>
+      </div>
+    </div>
+
+    <h2 style="margin:18px 2px 10px">4. Kiểm tra &amp; chỉnh sửa câu hỏi <span class="count" id="count"></span></h2>
+    <div id="questions"></div>
+    <button type="button" id="addQ">+ Thêm câu hỏi</button>
+
+    <div class="bar">
+      <button type="button" id="reset">Chọn file khác</button>
+      <button type="button" class="primary" id="save">Lưu vào ngân hàng đề</button>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const LABELS = ["A", "B", "C", "D"];
+  let state = { filename: null, sha256: null, questions: [] };
+
+  const tokenInput = $("token");
+  try { tokenInput.value = sessionStorage.getItem("rpmc_token") || ""; } catch (e) {}
+  tokenInput.addEventListener("input", () => {
+    try { sessionStorage.setItem("rpmc_token", tokenInput.value); } catch (e) {}
+  });
+
+  // ---------- thông báo ----------
+  function showMsg(kind, text, list) {
+    const box = document.createElement("div");
+    box.className = "msg " + kind;
+    box.textContent = text;
+    if (list && list.length) {
+      const ul = document.createElement("ul");
+      list.forEach((t) => { const li = document.createElement("li"); li.textContent = t; ul.appendChild(li); });
+      box.appendChild(ul);
+    }
+    const m = $("messages");
+    m.replaceChildren(box);
+    box.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+  const clearMsg = () => $("messages").replaceChildren();
+
+  // ---------- upload ----------
+  const drop = $("drop"), fileInput = $("file");
+  drop.addEventListener("click", () => fileInput.click());
+  drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); } });
+  ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+  drop.addEventListener("drop", (e) => { if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]); });
+  fileInput.addEventListener("change", () => { if (fileInput.files[0]) upload(fileInput.files[0]); fileInput.value = ""; });
+
+  async function upload(file) {
+    clearMsg();
+    if (!file.name.toLowerCase().endsWith(".docx")) return showMsg("err", "Chỉ chấp nhận file .docx");
+    if (file.size > 10 * 1024 * 1024) return showMsg("err", "File vượt quá 10 MiB");
+    if (!tokenInput.value) return showMsg("err", "Hãy nhập token quản trị ở bước 1 trước.");
+    drop.style.opacity = ".6";
+    try {
+      const res = await fetch("/api/exam/parse", {
+        method: "POST",
+        headers: { "X-Admin-Token": tokenInput.value, "X-Filename": encodeURIComponent(file.name) },
+        body: file,
+      });
+      const data = await res.json();
+      if (!res.ok) return showMsg("err", data.error || "Lỗi không xác định");
+      state = { filename: file.name, sha256: data.sha256, questions: data.questions };
+      if (!$("title").value) $("title").value = file.name.replace(/\.docx$/i, "");
+      renderAll();
+      $("editor").classList.remove("hidden");
+      if (data.errors.length) {
+        showMsg("warn", "Đã điền form từ file, nhưng có chỗ cần sửa trước khi lưu:", data.errors);
+      } else {
+        showMsg("ok", `Đã đọc ${data.questions.length} câu. Kiểm tra lại rồi bấm Lưu.`);
+      }
+    } catch (e) {
+      showMsg("err", "Không kết nối được máy chủ.");
+    } finally {
+      drop.style.opacity = "";
+    }
+  }
+
+  // ---------- form ----------
+  function renderAll() {
+    const root = $("questions");
+    root.replaceChildren(...state.questions.map(buildCard));
+    updateCount();
+  }
+  function updateCount() { $("count").textContent = `(${state.questions.length} câu)`; }
+
+  function buildCard(q, idx) {
+    const card = document.createElement("div");
+    card.className = "q";
+    card.dataset.idx = idx;
+
+    const head = document.createElement("div");
+    head.className = "qhead";
+    const no = document.createElement("span");
+    no.className = "qno";
+    no.textContent = "Câu " + (idx + 1);
+    const del = document.createElement("button");
+    del.type = "button"; del.className = "danger"; del.textContent = "Xóa câu";
+    del.addEventListener("click", () => { state.questions.splice(idx, 1); renderAll(); });
+    head.append(no, del);
+
+    const ta = document.createElement("textarea");
+    ta.value = q.content || "";
+    ta.placeholder = "Nội dung câu hỏi";
+    ta.addEventListener("input", () => { q.content = ta.value; card.classList.remove("invalid"); });
+
+    card.append(head, ta);
+
+    LABELS.forEach((L) => {
+      const row = document.createElement("div");
+      row.className = "opt" + (q.answer === L ? " correct" : "");
+      const radio = document.createElement("input");
+      radio.type = "radio"; radio.name = "ans" + idx; radio.checked = q.answer === L;
+      radio.title = "Đáp án đúng";
+      const lbl = document.createElement("span");
+      lbl.className = "lbl"; lbl.textContent = L;
+      const txt = document.createElement("input");
+      txt.type = "text"; txt.value = (q.options && q.options[L]) || ""; txt.placeholder = "Đáp án " + L;
+      txt.addEventListener("input", () => { q.options[L] = txt.value; card.classList.remove("invalid"); });
+      radio.addEventListener("change", () => {
+        q.answer = L;
+        card.classList.remove("invalid");
+        card.querySelectorAll(".opt").forEach((o, i) => o.classList.toggle("correct", LABELS[i] === L));
+      });
+      row.append(radio, lbl, txt);
+      card.appendChild(row);
+    });
+    return card;
+  }
+
+  $("addQ").addEventListener("click", () => {
+    state.questions.push({ content: "", options: { A: "", B: "", C: "", D: "" }, answer: null });
+    renderAll();
+    const cards = $("questions").children;
+    cards[cards.length - 1].scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+
+  $("reset").addEventListener("click", () => {
+    if (state.questions.length && !confirm("Bỏ nội dung đang chỉnh sửa và chọn file khác?")) return;
+    state = { filename: null, sha256: null, questions: [] };
+    $("editor").classList.add("hidden");
+    $("title").value = ""; $("subject").value = "";
+    clearMsg();
+  });
+
+  // ---------- kiểm tra phía trình duyệt (server vẫn kiểm tra lại) ----------
+  function localErrors() {
+    const errs = [];
+    document.querySelectorAll("#questions .q").forEach((c) => c.classList.remove("invalid"));
+    state.questions.forEach((q, i) => {
+      const bad = [];
+      if (!(q.content || "").trim()) bad.push("thiếu nội dung câu hỏi");
+      if (LABELS.some((L) => !((q.options && q.options[L]) || "").trim())) bad.push("cần đủ 4 đáp án A-D");
+      if (!q.answer) bad.push("chưa chọn đáp án đúng");
+      if (bad.length) {
+        errs.push(`Câu ${i + 1}: ${bad.join(", ")}`);
+        $("questions").children[i].classList.add("invalid");
+      }
+    });
+    if (!state.questions.length) errs.push("Chưa có câu hỏi nào");
+    if (!$("title").value.trim()) errs.push("Thiếu tên ngân hàng đề");
+    return errs;
+  }
+
+  // ---------- lưu ----------
+  $("save").addEventListener("click", async () => {
+    const errs = localErrors();
+    if (errs.length) {
+      showMsg("err", "Chưa thể lưu, hãy sửa các lỗi sau:", errs);
+      const first = document.querySelector("#questions .q.invalid");
+      if (first) first.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    const btn = $("save");
+    btn.disabled = true;
+    try {
+      const res = await fetch("/api/exam/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Admin-Token": tokenInput.value },
+        body: JSON.stringify({
+          title: $("title").value.trim(),
+          subject: $("subject").value.trim(),
+          filename: state.filename,
+          sha256: state.sha256,
+          questions: state.questions,
+        }),
+      });
+      let data = null;
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        return showMsg("err", `Máy chủ không phản hồi JSON (Mã trạng thái HTTP ${res.status}). Vui lòng kiểm tra log terminal của server.`);
+      }
+      if (!res.ok) {
+        return showMsg("err", data.error || "Lỗi không xác định từ máy chủ", data.errors);
+      }
+      showMsg("ok", `Đã lưu ${data.count} câu vào ngân hàng đề (mã #${data.bank_id}).`);
+      $("editor").classList.add("hidden");
+      state = { filename: null, sha256: null, questions: [] };
+      $("title").value = ""; $("subject").value = "";
+    } catch (e) {
+      showMsg("err", "Máy chủ không phản hồi hoặc đã đóng kết nối (ERR_EMPTY_RESPONSE). Vui lòng kiểm tra log terminal máy chủ.");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import secrets
 import time
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 
 class ExamStatus(str, Enum):
@@ -81,6 +82,7 @@ class StudentSession:
     student_id: str
     name: str
     ip_address: str
+    token: str = field(default_factory=lambda: secrets.token_urlsafe(32))
     connected_at: float = field(default_factory=time.time)
     last_seen: float = field(default_factory=time.time)
     score: float = 10.0
@@ -89,6 +91,11 @@ class StudentSession:
     warning_message: Optional[str] = None
     answers: Dict[str, Any] = field(default_factory=dict)
     submitted_at: Optional[float] = None
+    last_save_draft_at: float = 0.0
+    allow_re_register: bool = False
+    exam_score: float = 0.0
+    violation_penalty: float = 0.0
+    allocated_question_ids: Set[int] = field(default_factory=set)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -98,6 +105,10 @@ class StudentSession:
             "connected_at": self.connected_at,
             "last_seen": self.last_seen,
             "score": round(self.score, 2),
+            "exam_score": round(self.exam_score, 2),
+            "violation_penalty": round(self.violation_penalty, 2),
+            "answered_count": len(self.answers),
+            "total_questions": len(self.allocated_question_ids) if self.allocated_question_ids else 0,
             "violation_count": len(self.violations),
             "violations": [v.to_dict() for v in self.violations],
             "status": self.status.value,

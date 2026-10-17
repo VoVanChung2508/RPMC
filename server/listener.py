@@ -385,10 +385,36 @@ class ServerListener:
             reason = str(request.get("reason", "Giám thị đình chỉ quyền làm bài"))
             student = exam_mgr.lock_student(student_id, reason, actor=actor)
             return {"status": "ok", "student": student.to_dict()}
+        if op == "exam.student.reset_session":
+            student_id = str(request.get("student_id", ""))
+            reason = str(request.get("reason", "Giám thị cấp lại phiên thi"))
+            student = exam_mgr.reset_student_session(student_id, reason=reason, actor=actor)
+            return {"status": "ok", "student": student.to_dict()}
         if op == "exam.report.export":
             return {"csv": exam_mgr.export_csv_report()}
         if op == "exam.audit.list":
             return {"entries": exam_mgr.get_audit_logs()}
+        if op == "exam.banks.list":
+            return {"banks": exam_mgr.list_question_banks()}
+        if op == "exam.create":
+            exam = exam_mgr.create_exam(
+                bank_id=int(request["bank_id"]),
+                title=str(request.get("title", "Kỳ thi")),
+                duration_minutes=int(request.get("duration_minutes", 45)),
+                question_count=int(request["question_count"]) if request.get("question_count") else None,
+                shuffle=bool(request.get("shuffle", True)),
+                actor=actor,
+            )
+            return {"status": "ok", "exam": exam}
+        if op == "exam.active.get":
+            return {"exam": exam_mgr.get_active_exam()}
+        if op == "exam.active.set":
+            exam = exam_mgr.set_active_exam(int(request["exam_id"]), actor=actor)
+            return {"status": "ok", "exam": exam}
+        if op == "exam.status.set":
+            status_val = str(request.get("status", "IN_PROGRESS"))
+            res = exam_mgr.set_exam_status(status_val, actor=actor)
+            return {"status": "ok", "exam": res, "config": exam_mgr.get_config().to_dict()}
         raise ValueError(f"Unknown exam operation: {op}")
 
     def _serve_exam_tcp_client(self, conn: socket.socket, initial_frame: Frame) -> None:

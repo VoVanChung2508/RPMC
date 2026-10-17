@@ -1,62 +1,4 @@
-// Web Exam Client Logic with Real-time Proctoring
-
-const EXAM_QUESTIONS = [
-  {
-    id: "q1",
-    question: "Giao thức TCP giải quyết hiện tượng dính gói / xé gói (Fragmentation & Concatenation) trong luồng dữ liệu byte stream bằng cách nào?",
-    options: [
-      "A. Sử dụng Header chứa trường độ dài (Payload Length) cố định phía trước gói tin.",
-      "B. Dựa vào cờ FIN của từng phân đoạn TCP.",
-      "C. Tự động chuyển toàn bộ luồng truyền sang giao thức UDP datagram.",
-      "D. Đợi bộ đệm Socket tràn hoàn toàn trước khi đọc dữ liệu."
-    ],
-    answer: "A"
-  },
-  {
-    id: "q2",
-    question: "Quá trình bắt tay 3 bước (Three-way Handshake) của giao thức TCP được thực hiện theo thứ tự cờ nào?",
-    options: [
-      "A. SYN -> ACK -> FIN",
-      "B. SYN -> SYN-ACK -> ACK",
-      "C. ACK -> SYN -> SYN-ACK",
-      "D. PSH -> ACK -> URG"
-    ],
-    answer: "B"
-  },
-  {
-    id: "q3",
-    question: "Trong kiến trúc đa luồng của Socket Server, hàm nào sau đây được sử dụng để chấp nhận kết nối từ Client?",
-    options: [
-      "A. socket.bind()",
-      "B. socket.listen()",
-      "C. socket.accept()",
-      "D. socket.connect()"
-    ],
-    answer: "C"
-  },
-  {
-    id: "q4",
-    question: "Độ dài tiêu chuẩn của Header nhị phân trong hệ thống RPMC/Exam Protocol của bài thi này là bao nhiêu byte?",
-    options: [
-      "A. 8 bytes",
-      "B. 12 bytes (Magic: 2B, Ver: 1B, Res: 1B, Len: 4B, Frame: 2B, Cmd: 2B)",
-      "C. 20 bytes",
-      "D. 16 bytes"
-    ],
-    answer: "B"
-  },
-  {
-    id: "q5",
-    question: "Trong quy trình Scrum, vai trò nào chịu trách nhiệm thiết lập tiêu chí nghiệm thu và quy chế điểm phạt cho phòng thi?",
-    options: [
-      "A. Scrum Master (SM)",
-      "B. Product Owner (PO) / Giảng viên",
-      "C. Development Team / Học sinh",
-      "D. Agile Coach"
-    ],
-    answer: "B"
-  }
-];
+// Web Exam Client Logic with Real-time Proctoring & PostgreSQL Exam Integration
 
 class ExamApp {
   constructor() {
@@ -65,7 +7,7 @@ class ExamApp {
     this.config = {
       initial_score: 10.0,
       penalty_per_violation: 1.0,
-      max_violations: 10,
+      max_violations: 3,
       duration_minutes: 45
     };
     this.currentScore = 10.0;
@@ -77,10 +19,23 @@ class ExamApp {
     this.timerInterval = null;
     this.remainingSeconds = 45 * 60;
     this.eventSource = null;
+    this.questions = [];
+    this.submissions = {};
+    this.token = sessionStorage.getItem("rpmc_student_token") || "";
+    this.saveQueue = [];
+    this.isProcessingSaveQueue = false;
 
     this.initElements();
     this.bindEvents();
-    this.fetchConfig();
+    this.initApp();
+  }
+
+  authHeaders(extra = {}) {
+    const headers = { ...extra };
+    if (this.token) {
+      headers["X-Student-Token"] = this.token;
+    }
+    return headers;
   }
 
   initElements() {
@@ -103,6 +58,9 @@ class ExamApp {
     this.hudViolations = document.getElementById("hud-violations");
     this.examTimer = document.getElementById("exam-timer");
     this.questionsContainer = document.getElementById("questions-container");
+    this.saveStatusBadge = document.getElementById("save-status-badge");
+    this.saveStatusIcon = document.getElementById("save-status-icon");
+    this.saveStatusText = document.getElementById("save-status-text");
 
     // Modals
     this.lockedOverlay = document.getElementById("locked-overlay");
@@ -113,6 +71,24 @@ class ExamApp {
     this.supervisorModal = document.getElementById("supervisor-warning-modal");
     this.supervisorMsgText = document.getElementById("supervisor-message-text");
     this.btnAckWarning = document.getElementById("btn-ack-warning");
+  }
+
+  updateSaveStatus(status) {
+    if (!this.saveStatusBadge) return;
+    this.saveStatusBadge.classList.remove("saved", "saving", "error");
+    if (status === "saving") {
+      this.saveStatusBadge.classList.add("saving");
+      if (this.saveStatusIcon) this.saveStatusIcon.textContent = "⏳";
+      if (this.saveStatusText) this.saveStatusText.textContent = "Đang lưu...";
+    } else if (status === "error") {
+      this.saveStatusBadge.classList.add("error");
+      if (this.saveStatusIcon) this.saveStatusIcon.textContent = "⚠️";
+      if (this.saveStatusText) this.saveStatusText.textContent = "Lỗi lưu đáp án";
+    } else {
+      this.saveStatusBadge.classList.add("saved");
+      if (this.saveStatusIcon) this.saveStatusIcon.textContent = "✓";
+      if (this.saveStatusText) this.saveStatusText.textContent = "Đã lưu";
+    }
   }
 
   bindEvents() {
@@ -148,7 +124,6 @@ class ExamApp {
 
     // Block keyboard shortcuts
     window.addEventListener("keydown", (e) => {
-      // F12 or Ctrl+Shift+I or Ctrl+Shift+J or Alt+Tab or Ctrl+R
       if (
         e.key === "F12" ||
         (e.ctrlKey && e.shiftKey && (e.key === "I" || e.key === "J" || e.key === "C")) ||
@@ -163,20 +138,82 @@ class ExamApp {
     });
   }
 
+  async initApp() {
+    await this.fetchConfig();
+    this.checkSessionRestoration();
+  }
+
   async fetchConfig() {
     try {
       const res = await fetch("/api/exam/config");
       if (res.ok) {
         this.config = await res.json();
-        document.getElementById("info-init-score").textContent = this.config.initial_score.toFixed(1);
-        document.getElementById("info-penalty").textContent = `-${this.config.penalty_per_violation.toFixed(1)} đ`;
-        document.getElementById("info-max-violation").textContent = `${this.config.max_violations} lần`;
-        document.getElementById("info-duration").textContent = `${this.config.duration_minutes} phút`;
-        this.currentScore = this.config.initial_score;
-        this.remainingSeconds = this.config.duration_minutes * 60;
+        const initScoreEl = document.getElementById("info-init-score");
+        if (initScoreEl) initScoreEl.textContent = this.config.initial_score.toFixed(1);
+        const penEl = document.getElementById("info-penalty");
+        if (penEl) penEl.textContent = `-${this.config.penalty_per_violation.toFixed(1)} đ`;
+        const maxVEl = document.getElementById("info-max-violation");
+        if (maxVEl) maxVEl.textContent = `${this.config.max_violations} lần`;
+        const durEl = document.getElementById("info-duration");
+        if (durEl) durEl.textContent = `${this.config.duration_minutes} phút`;
+
+        if (this.config.remaining_seconds !== undefined) {
+          this.remainingSeconds = this.config.remaining_seconds;
+        } else {
+          this.remainingSeconds = this.config.duration_minutes * 60;
+        }
       }
     } catch (err) {
-      console.warn("Could not fetch remote config, using defaults", err);
+      console.warn("Không thể tải cấu hình từ server, sử dụng mặc định:", err);
+    }
+  }
+
+  async checkSessionRestoration() {
+    // Khôi phục phiên làm bài khi thí sinh F5 tải lại trang
+    const savedId = sessionStorage.getItem("rpmc_student_id");
+    const savedName = sessionStorage.getItem("rpmc_student_name");
+    const savedToken = sessionStorage.getItem("rpmc_student_token");
+    if (!savedId || !savedToken) return;
+
+    this.token = savedToken;
+    try {
+      const res = await fetch(`/api/exam/status?student_id=${encodeURIComponent(savedId)}`, {
+        headers: this.authHeaders()
+      });
+      if (res.ok) {
+        const student = await res.json();
+        this.studentId = savedId;
+        this.studentName = savedName || student.name || savedId;
+        this.currentScore = student.score;
+        this.violationCount = student.violation_count || 0;
+
+        if (student.remaining_seconds !== undefined) {
+          this.remainingSeconds = student.remaining_seconds;
+        }
+
+        if (student.status === "SUBMITTED") {
+          this.isExamSubmitted = true;
+          this.showResult(student);
+          return;
+        }
+
+        if (student.status === "LOCKED") {
+          this.lockExam(student.warning_message || "Bài thi đã bị khóa");
+          return;
+        }
+
+        // Tự động khôi phục giao diện làm bài thi
+        this.isExamStarted = true;
+        this.switchStage(this.loginStage, this.examStage);
+        this.hudStudentInfo.textContent = `${this.studentName} (${this.studentId})`;
+        this.updateHud();
+        await this.loadAndRenderQuestions();
+        await this.restoreSubmissions();
+        this.startTimer();
+        this.connectSSE();
+      }
+    } catch (err) {
+      console.warn("Không thể khôi phục phiên từ server:", err);
     }
   }
 
@@ -198,7 +235,15 @@ class ExamApp {
       });
       const data = await res.json();
       if (data.status === "ok") {
+        this.token = data.token || "";
+        sessionStorage.setItem("rpmc_student_token", this.token);
+        sessionStorage.setItem("rpmc_student_id", this.studentId);
+        sessionStorage.setItem("rpmc_student_name", this.studentName);
+
         if (data.config) this.config = data.config;
+        if (data.config && data.config.remaining_seconds !== undefined) {
+          this.remainingSeconds = data.config.remaining_seconds;
+        }
         this.currentScore = data.student.score;
         this.violationCount = data.student.violation_count || 0;
 
@@ -208,12 +253,11 @@ class ExamApp {
         alert(data.error || "Đăng ký thất bại");
       }
     } catch (err) {
-      alert("Lỗi kết nối tới Server LAN. Vui lòng kiểm tra địa chỉ IP.");
+      alert("Lỗi kết nối tới Server LAN. Vui lòng kiểm tra địa chỉ IP và trạng thái server.");
     }
   }
 
   async startExam() {
-    // Request Fullscreen
     try {
       if (document.documentElement.requestFullscreen) {
         await document.documentElement.requestFullscreen();
@@ -225,59 +269,210 @@ class ExamApp {
     this.isExamStarted = true;
     this.switchStage(this.readyStage, this.examStage);
 
-    // Update HUD
     this.hudStudentInfo.textContent = `${this.studentName} (${this.studentId})`;
     this.updateHud();
 
-    // Render Questions
-    this.renderQuestions();
-
-    // Start Timer
+    await this.loadAndRenderQuestions();
+    await this.restoreSubmissions();
     this.startTimer();
-
-    // Connect SSE for real-time supervisor alerts
     this.connectSSE();
   }
 
+  async loadAndRenderQuestions() {
+    try {
+      const res = await fetch(`/api/exam/questions?student_id=${encodeURIComponent(this.studentId)}`, {
+        headers: this.authHeaders()
+      });
+      const data = await res.json();
+      if (res.ok && data.questions) {
+        this.questions = data.questions;
+        if (data.remaining_seconds !== undefined) {
+          this.remainingSeconds = data.remaining_seconds;
+        }
+        this.renderQuestions();
+      } else {
+        this.questionsContainer.innerHTML = `<div class="error-msg">Không tải được đề thi: ${data.error || "Chưa có câu hỏi"}</div>`;
+      }
+    } catch (err) {
+      this.questionsContainer.innerHTML = `<div class="error-msg">Lỗi kết nối khi nạp đề thi từ server.</div>`;
+    }
+  }
+
   renderQuestions() {
-    this.questionsContainer.innerHTML = EXAM_QUESTIONS.map((q, idx) => `
-      <div class="question-card" id="card-${q.id}">
-        <div class="question-number">CÂU HỎI ${idx + 1} / ${EXAM_QUESTIONS.length}</div>
-        <div class="question-text">${q.question}</div>
+    if (!this.questions || this.questions.length === 0) {
+      this.questionsContainer.innerHTML = `<div class="info-msg">Chưa có câu hỏi nào cho kỳ thi này.</div>`;
+      return;
+    }
+
+    this.questionsContainer.innerHTML = this.questions.map((q, idx) => `
+      <div class="question-card" id="card-${q.question_id}">
+        <div class="question-number">CÂU HỎI ${idx + 1} / ${this.questions.length}</div>
+        <div class="question-text">${this.escapeHtml(q.content)}</div>
         <div class="options-list">
-          ${q.options.map((opt, optIdx) => {
-            const letter = opt.substring(0, 1);
+          ${q.options.map(opt => {
+            const val = opt.orig || opt.label;
             return `
-              <label class="option-label">
-                <input type="radio" name="ans-${q.id}" value="${letter}">
-                <span class="option-text">${opt}</span>
+              <label class="option-label" data-qid="${q.question_id}" data-opt="${val}">
+                <input type="radio" name="ans-${q.question_id}" value="${val}">
+                <span class="option-text"><strong>${opt.label}.</strong> ${this.escapeHtml(opt.content)}</span>
               </label>
             `;
           }).join("")}
         </div>
       </div>
     `).join("");
+
+    // Gắn sự kiện lưu nháp tức thì cho từng đáp án
+    this.questionsContainer.querySelectorAll('input[type="radio"]').forEach(radio => {
+      radio.addEventListener("change", (e) => {
+        const qid = e.target.name.replace("ans-", "");
+        const chosen = e.target.value;
+        this.saveDraft(qid, chosen);
+      });
+    });
+  }
+
+  async restoreSubmissions() {
+    try {
+      const res = await fetch(`/api/exam/submissions?student_id=${encodeURIComponent(this.studentId)}`, {
+        headers: this.authHeaders()
+      });
+      if (res.ok) {
+        const data = await res.json();
+        this.submissions = data.submissions || {};
+        for (const [qid, chosen] of Object.entries(this.submissions)) {
+          const radio = document.querySelector(`input[name="ans-${qid}"][value="${chosen}"]`);
+          if (radio) {
+            radio.checked = true;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Không thể tải các đáp án đã lưu:", err);
+    }
+  }
+
+  saveDraft(questionId, chosen) {
+    if (this.isExamLocked || this.isExamSubmitted) return;
+
+    // Cập nhật ngay bộ nhớ tạm phía client để không bị mất lựa chọn khi người dùng bấm nhanh
+    this.submissions[questionId] = chosen;
+
+    // Đưa vào hàng đợi lưu draft (nếu câu này đã có trong hàng đợi chờ gửi, ghi đè đáp án mới nhất)
+    const existingIndex = this.saveQueue.findIndex(item => item.questionId === questionId);
+    if (existingIndex >= 0) {
+      this.saveQueue[existingIndex].chosen = chosen;
+      this.saveQueue[existingIndex].retries = 0;
+    } else {
+      this.saveQueue.push({
+        questionId: questionId,
+        chosen: chosen,
+        retries: 0
+      });
+    }
+
+    this.processSaveQueue();
+  }
+
+  async processSaveQueue() {
+    if (this.isProcessingSaveQueue) return;
+    if (this.saveQueue.length === 0) return;
+
+    this.isProcessingSaveQueue = true;
+    this.updateSaveStatus("saving");
+
+    while (this.saveQueue.length > 0) {
+      const item = this.saveQueue[0];
+      try {
+        const res = await fetch("/api/exam/save_draft", {
+          method: "POST",
+          headers: this.authHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({
+            student_id: this.studentId,
+            question_id: item.questionId,
+            chosen: item.chosen
+          })
+        });
+
+        if (res.ok) {
+          // Lưu thành công câu hiện tại
+          this.saveQueue.shift();
+        } else if (res.status === 429) {
+          // Gặp 429 Rate Limit: Thử lại có giới hạn
+          item.retries = (item.retries || 0) + 1;
+          if (item.retries > 5) {
+            console.error("Vượt quá số lần thử lại khi lưu câu", item.questionId);
+            this.updateSaveStatus("error");
+            this.saveQueue.shift();
+          } else {
+            // Chờ trước khi gửi lại (exponential backoff nhẹ)
+            await new Promise(r => setTimeout(r, 200 * item.retries));
+          }
+        } else if (res.status === 403) {
+          const data = await res.json().catch(() => ({}));
+          this.updateSaveStatus("error");
+          alert(data.error || "Không thể lưu đáp án (Kỳ thi đã kết thúc hoặc bài thi bị khóa)!");
+          if (data.error && data.error.includes("khóa")) {
+            this.lockExam(data.error);
+          } else if (data.error && data.error.includes("kết thúc")) {
+            this.submitExam(true);
+          }
+          this.saveQueue = [];
+          break;
+        } else {
+          item.retries = (item.retries || 0) + 1;
+          if (item.retries > 3) {
+            this.updateSaveStatus("error");
+            this.saveQueue.shift();
+          } else {
+            await new Promise(r => setTimeout(r, 300));
+          }
+        }
+      } catch (networkErr) {
+        // Lỗi mạng: thử lại có giới hạn
+        console.warn("Lỗi mạng khi lưu nháp:", networkErr);
+        item.retries = (item.retries || 0) + 1;
+        if (item.retries > 5) {
+          this.updateSaveStatus("error");
+          this.saveQueue.shift();
+        } else {
+          await new Promise(r => setTimeout(r, 250 * item.retries));
+        }
+      }
+    }
+
+    this.isProcessingSaveQueue = false;
+    if (this.saveQueue.length === 0) {
+      this.updateSaveStatus("saved");
+    }
   }
 
   startTimer() {
-    this.timerInterval = setInterval(() => {
-      this.remainingSeconds--;
+    if (this.timerInterval) clearInterval(this.timerInterval);
+
+    const updateTimerDisplay = () => {
       if (this.remainingSeconds <= 0) {
         clearInterval(this.timerInterval);
         this.examTimer.textContent = "00:00";
-        alert("Hết giờ làm bài! Hệ thống tự động nộp bài.");
-        this.submitExam();
+        alert("Hết giờ làm bài! Hệ thống tự động thu bài và chấm điểm.");
+        this.submitExam(true);
         return;
       }
       const mins = Math.floor(this.remainingSeconds / 60);
       const secs = this.remainingSeconds % 60;
       this.examTimer.textContent = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+    };
+
+    updateTimerDisplay();
+    this.timerInterval = setInterval(() => {
+      this.remainingSeconds--;
+      updateTimerDisplay();
     }, 1000);
   }
 
   connectSSE() {
     if (this.eventSource) this.eventSource.close();
-    this.eventSource = new EventSource(`/api/exam/events?student_id=${encodeURIComponent(this.studentId)}`);
+    this.eventSource = new EventSource(`/api/exam/events?student_id=${encodeURIComponent(this.studentId)}&token=${encodeURIComponent(this.token)}`);
 
     this.eventSource.onmessage = (event) => {
       try {
@@ -287,7 +482,7 @@ class ExamApp {
     };
 
     this.eventSource.onerror = () => {
-      console.warn("SSE connection interrupted, retrying...");
+      console.warn("Mất kết nối SSE, đang tự động thử lại...");
     };
   }
 
@@ -301,20 +496,22 @@ class ExamApp {
       }
     } else if (payload.type === "CONFIG_UPDATE") {
       this.config = payload.config;
+      if (payload.config && payload.config.status === "FINISHED") {
+        this.submitExam(true);
+      }
       this.updateHud();
     }
   }
 
   async reportViolation(eventType, detail) {
     const now = Date.now();
-    // Debounce violation reports by 1.5 seconds to avoid spamming bursts
     if (now - this.lastViolationTime < 1500) return;
     this.lastViolationTime = now;
 
     try {
       const res = await fetch("/api/exam/violation", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: this.authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           student_id: this.studentId,
           event: eventType,
@@ -329,16 +526,14 @@ class ExamApp {
         this.violationCount = data.student.violation_count;
         this.updateHud();
 
-        // Show Toast
         this.showToast(`CẢNH BÁO VI PHẠM: ${detail}`, `Bị trừ ${data.violation.deduction.toFixed(1)} điểm!`);
 
-        // Check if locked
         if (data.student.status === "LOCKED" || this.violationCount >= this.config.max_violations) {
           this.lockExam(`Bạn đã vi phạm ${this.violationCount}/${this.config.max_violations} lần.`);
         }
       }
     } catch (err) {
-      console.error("Failed to report violation", err);
+      console.error("Lỗi gửi cảnh báo vi phạm:", err);
     }
   }
 
@@ -363,58 +558,79 @@ class ExamApp {
     this.lockedOverlay.classList.add("active");
   }
 
-  async submitExam() {
+  async submitExam(isAuto = false) {
     if (this.isExamSubmitted) return;
-    if (!confirm("Bạn có chắc chắn muốn nộp bài thi không?")) return;
+    if (!isAuto && !confirm("Bạn có chắc chắn muốn nộp bài thi không?")) return;
 
     this.isExamSubmitted = true;
     if (this.timerInterval) clearInterval(this.timerInterval);
 
-    // Collect answers
+    // Thu thập toàn bộ đáp án đã chọn
     const answers = {};
-    EXAM_QUESTIONS.forEach(q => {
-      const checked = document.querySelector(`input[name="ans-${q.id}"]:checked`);
-      answers[q.id] = checked ? checked.value : null;
-    });
+    if (this.questions && this.questions.length > 0) {
+      this.questions.forEach(q => {
+        const checked = document.querySelector(`input[name="ans-${q.question_id}"]:checked`);
+        if (checked) {
+          answers[q.question_id] = checked.value;
+        }
+      });
+    }
 
     try {
       const res = await fetch("/api/exam/submit", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: this.authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           student_id: this.studentId,
           answers: answers
         })
       });
       const data = await res.json();
-      this.showResult(data.student);
+      if (res.ok) {
+        this.showResult(data.student);
+      } else {
+        alert(data.error || "Lỗi khi nộp bài!");
+      }
     } catch (err) {
-      alert("Lỗi nộp bài thi!");
+      alert("Lỗi kết nối khi nộp bài thi!");
     }
   }
 
   showResult(student) {
     this.switchStage(this.examStage, this.resultStage);
+    this.switchStage(this.readyStage, this.resultStage);
+    this.switchStage(this.loginStage, this.resultStage);
+
     document.getElementById("result-student-name").textContent = `Thí sinh: ${this.studentName} (${this.studentId})`;
-    document.getElementById("result-final-score").textContent = student.score.toFixed(1);
+    document.getElementById("result-final-score").textContent = Number(student.score).toFixed(1);
 
     const details = document.getElementById("result-details");
     details.innerHTML = `
       <div style="margin-top: 16px; font-size: 14px; color: #8b949e; line-height: 1.8;">
-        <p>Tổng số lần vi phạm trong phòng thi: <strong style="color: #f85149;">${student.violation_count} lần</strong></p>
-        <p>Mức trừ điểm: <strong>-${(student.violation_count * this.config.penalty_per_violation).toFixed(1)} điểm</strong></p>
+        <p>Tổng số lần vi phạm trong phòng thi: <strong style="color: #f85149;">${student.violation_count || 0} lần</strong></p>
+        <p>Mức trừ điểm: <strong>-${((student.violation_count || 0) * this.config.penalty_per_violation).toFixed(1)} điểm</strong></p>
         <p>Trạng thái cuối cùng: <strong style="color: #3fb950;">${student.status}</strong></p>
       </div>
     `;
   }
 
   switchStage(fromStage, toStage) {
-    fromStage.classList.remove("active");
-    toStage.classList.add("active");
+    if (fromStage) fromStage.classList.remove("active");
+    if (toStage) toStage.classList.add("active");
+  }
+
+  escapeHtml(str) {
+    if (!str) return "";
+    return str
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
   }
 }
 
-// Start on DOM ready
+// Khởi chạy khi DOM sẵn sàng
 document.addEventListener("DOMContentLoaded", () => {
   new ExamApp();
 });

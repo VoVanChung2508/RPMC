@@ -259,6 +259,11 @@ body {
   font-weight: 500;
   color: var(--text-primary);
 }
+.header-center {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
 .timer-display {
   background: rgba(13, 17, 23, 0.8);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -271,6 +276,31 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.save-status-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+.save-status-badge.saved {
+  background: rgba(63, 185, 80, 0.15);
+  color: #3fb950;
+  border: 1px solid rgba(63, 185, 80, 0.4);
+}
+.save-status-badge.saving {
+  background: rgba(210, 153, 34, 0.15);
+  color: #d29922;
+  border: 1px solid rgba(210, 153, 34, 0.4);
+}
+.save-status-badge.error {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+  border: 1px solid rgba(248, 81, 73, 0.4);
 }
 .header-right {
   display: flex;

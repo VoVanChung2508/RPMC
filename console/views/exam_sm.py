@@ -68,12 +68,14 @@ def build_exam_sm(root, request):
     # Table Header
     tbl_hdr = ctk.CTkFrame(left_col, fg_color=CyberpunkTheme.PANEL_BORDER, height=30)
     tbl_hdr.pack(fill="x", padx=12, pady=(0, 4))
-    ctk.CTkLabel(tbl_hdr, text="MSSV", width=90, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=4)
-    ctk.CTkLabel(tbl_hdr, text="Họ và Tên", width=140, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=4)
-    ctk.CTkLabel(tbl_hdr, text="IP LAN", width=100, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=4)
-    ctk.CTkLabel(tbl_hdr, text="Điểm", width=60, anchor="center", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=4)
-    ctk.CTkLabel(tbl_hdr, text="Vi Phạm", width=70, anchor="center", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=4)
-    ctk.CTkLabel(tbl_hdr, text="Trạng Thái", width=90, anchor="center", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=4)
+    ctk.CTkLabel(tbl_hdr, text="MSSV", width=80, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=4)
+    ctk.CTkLabel(tbl_hdr, text="Họ và Tên", width=130, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=4)
+    ctk.CTkLabel(tbl_hdr, text="IP LAN", width=90, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=4)
+    ctk.CTkLabel(tbl_hdr, text="Số câu đã làm", width=90, anchor="center", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=4)
+    ctk.CTkLabel(tbl_hdr, text="Điểm bài làm", width=85, anchor="center", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=4)
+    ctk.CTkLabel(tbl_hdr, text="Điểm cuối", width=70, anchor="center", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=4)
+    ctk.CTkLabel(tbl_hdr, text="Vi Phạm", width=65, anchor="center", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=4)
+    ctk.CTkLabel(tbl_hdr, text="Trạng Thái", width=85, anchor="center", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=4)
 
     students_scroll = ctk.CTkScrollableFrame(left_col, fg_color="transparent")
     students_scroll.pack(fill="both", expand=True, padx=8, pady=(0, 8))
@@ -170,6 +172,27 @@ def build_exam_sm(root, request):
     )
     btn_lock.pack(padx=16, pady=4, fill="x")
 
+    def reset_student_session():
+        sid = selected_stu_var.get().strip()
+        if not sid or sid.startswith("("):
+            messagebox.showwarning("Cảnh báo", "Vui lòng chọn một thí sinh!")
+            return
+        if not messagebox.askyesno("Xác nhận cấp lại phiên", f"CẤP LẠI PHIÊN THI cho thí sinh {sid}?\n\nToken cũ sẽ bị vô hiệu hóa, cho phép thí sinh đăng nhập lại từ máy mới hoặc tab mới mà vẫn bảo toàn bài làm."):
+            return
+        request("exam.student.reset_session", lambda r: [
+            messagebox.showinfo("Thành công", f"Đã cấp lại phiên thi cho {sid}!\nThí sinh hiện có thể vào lại phòng thi."),
+            refresh_data()
+        ], student_id=sid, reason="Giám thị cấp lại phiên thi sau khi đóng tab/đổi máy")
+
+    btn_reset = ctk.CTkButton(
+        right_col,
+        text="🔄 Cấp Lại Phiên Thi (Reset Session)",
+        fg_color=CyberpunkTheme.CYAN,
+        text_color="#000000",
+        command=reset_student_session,
+    )
+    btn_reset.pack(padx=16, pady=4, fill="x")
+
     # Real-time Violation Alerts Feed
     ctk.CTkLabel(
         right_col,
@@ -200,6 +223,10 @@ def build_exam_sm(root, request):
             stu_ids.append(sid)
             name = s.get("name", "")
             ip = s.get("ip_address", "")
+            ans_count = s.get("answered_count", len(s.get("answers", {})))
+            tot_q = s.get("total_questions", 0)
+            ans_text = f"{ans_count}/{tot_q}" if tot_q > 0 else f"{ans_count} câu"
+            exam_sc = s.get("exam_score", 0.0)
             score = s.get("score", 10.0)
             v_count = s.get("violation_count", 0)
             total_violations += v_count
@@ -208,13 +235,15 @@ def build_exam_sm(root, request):
             row = ctk.CTkFrame(students_scroll, fg_color="transparent", height=28)
             row.pack(fill="x", pady=2)
 
-            ctk.CTkLabel(row, text=sid, width=90, anchor="w", text_color=CyberpunkTheme.CYAN).pack(side="left", padx=4)
-            ctk.CTkLabel(row, text=name, width=140, anchor="w").pack(side="left", padx=4)
-            ctk.CTkLabel(row, text=ip, width=100, anchor="w", text_color=CyberpunkTheme.TEXT_MUTED).pack(side="left", padx=4)
-            ctk.CTkLabel(row, text=f"{score:.1f}", width=60, anchor="center", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=4)
+            ctk.CTkLabel(row, text=sid, width=80, anchor="w", text_color=CyberpunkTheme.CYAN).pack(side="left", padx=4)
+            ctk.CTkLabel(row, text=name, width=130, anchor="w").pack(side="left", padx=4)
+            ctk.CTkLabel(row, text=ip, width=90, anchor="w", text_color=CyberpunkTheme.TEXT_MUTED).pack(side="left", padx=4)
+            ctk.CTkLabel(row, text=ans_text, width=90, anchor="center", text_color=CyberpunkTheme.CYAN).pack(side="left", padx=4)
+            ctk.CTkLabel(row, text=f"{exam_sc:.1f} đ", width=85, anchor="center", text_color=CyberpunkTheme.YELLOW, font=ctk.CTkFont(weight="bold")).pack(side="left", padx=4)
+            ctk.CTkLabel(row, text=f"{score:.1f}", width=70, anchor="center", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=4)
 
             v_color = CyberpunkTheme.RED if v_count > 0 else CyberpunkTheme.TEXT_MUTED
-            ctk.CTkLabel(row, text=str(v_count), width=70, anchor="center", text_color=v_color).pack(side="left", padx=4)
+            ctk.CTkLabel(row, text=str(v_count), width=65, anchor="center", text_color=v_color).pack(side="left", padx=4)
 
             status_color = CyberpunkTheme.GREEN
             if status == "LOCKED":
@@ -224,7 +253,7 @@ def build_exam_sm(root, request):
             elif status == "SUBMITTED":
                 status_color = CyberpunkTheme.CYAN
 
-            ctk.CTkLabel(row, text=status, width=90, anchor="center", text_color=status_color).pack(side="left", padx=4)
+            ctk.CTkLabel(row, text=status, width=85, anchor="center", text_color=status_color).pack(side="left", padx=4)
 
         if stu_ids:
             stu_dropdown.configure(values=stu_ids)

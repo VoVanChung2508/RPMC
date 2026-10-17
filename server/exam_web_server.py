@@ -9,6 +9,7 @@ import urllib.parse
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 
+from common.exam_models import StudentSession
 from server.exam_manager import ExamManager
 
 
@@ -28,7 +29,7 @@ class ExamRequestHandler(SimpleHTTPRequestHandler):
         # Enable CORS for LAN access
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Student-Token")
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         super().end_headers()
 
@@ -36,26 +37,116 @@ class ExamRequestHandler(SimpleHTTPRequestHandler):
         self.send_response(204)
         self.end_headers()
 
+    def _extract_token(self, is_sse: bool = False, query: Optional[dict] = None) -> str:
+        token = self.headers.get("X-Student-Token", "").strip()
+        if not token:
+            auth_header = self.headers.get("Authorization", "").strip()
+            if auth_header.startswith("Bearer "):
+                token = auth_header[7:].strip()
+        # Chỉ chấp nhận token trong query param duy nhất cho SSE (/api/exam/events)
+        if not token and is_sse and query and "token" in query:
+            token = query["token"][0].strip()
+        return token
+
+    def _authenticate_student(
+        self,
+        query: dict,
+        claimed_student_id: Optional[str] = None,
+        is_sse: bool = False,
+    ) -> tuple[Optional[StudentSession], Optional[tuple[int, dict]]]:
+        token = self._extract_token(is_sse=is_sse, query=query)
+        if not token:
+            return None, (401, {"error": "Thiếu token phiên thí sinh (vui lòng gửi qua header X-Student-Token hoặc Authorization: Bearer)"})
+
+        exam_mgr = ExamManager.get_instance()
+        try:
+            student = exam_mgr.verify_student_token(token, claimed_student_id)
+            return student, None
+        except PermissionError as exc:
+            msg = str(exc)
+            if claimed_student_id and "Token không thuộc về sinh viên" in msg:
+                return None, (403, {"error": msg})
+            return None, (401, {"error": msg})
+
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         query = urllib.parse.parse_qs(parsed.query)
+        exam_mgr = ExamManager.get_instance()
 
         if path == "/api/exam/config":
-            self._send_json(200, ExamManager.get_instance().get_config().to_dict())
+            cfg = exam_mgr.get_config().to_dict()
+            exam = exam_mgr.get_active_exam()
+            if exam:
+                cfg["exam_title"] = exam.get("title", cfg.get("exam_title"))
+                cfg["duration_minutes"] = exam.get("duration_minutes", cfg.get("duration_minutes"))
+                cfg["exam_id"] = exam.get("id")
+                cfg["status"] = exam.get("status", cfg.get("status"))
+                cfg["started_at"] = exam.get("started_at")
+            cfg["remaining_seconds"] = exam_mgr.get_remaining_seconds()
+            cfg["server_time"] = time.time()
+            self._send_json(200, cfg)
             return
 
         if path == "/api/exam/status":
-            student_id = query.get("student_id", [""])[0]
-            student = ExamManager.get_instance().get_student(student_id)
-            if not student:
-                self._send_json(404, {"error": "Student not found"})
+            claimed_id = query.get("student_id", [""])[0].strip().upper() or None
+            student, err = self._authenticate_student(query, claimed_student_id=claimed_id)
+            if err:
+                self._send_json(err[0], err[1])
                 return
-            self._send_json(200, student.to_dict())
+            student_id = student.student_id
+            res = student.to_dict()
+            res["remaining_seconds"] = exam_mgr.get_remaining_seconds()
+            res["submissions"] = exam_mgr.get_student_submissions(student_id)
+            exam = exam_mgr.get_active_exam()
+            res["exam_status"] = exam.get("status") if exam else exam_mgr.get_config().status.value
+            self._send_json(200, res)
+            return
+
+        if path == "/api/exam/questions":
+            claimed_id = query.get("student_id", [""])[0].strip().upper() or None
+            student, err = self._authenticate_student(query, claimed_student_id=claimed_id)
+            if err:
+                self._send_json(err[0], err[1])
+                return
+            student_id = student.student_id
+            try:
+                questions = exam_mgr.load_exam_for_student(student_id)
+                exam = exam_mgr.get_active_exam()
+                self._send_json(200, {
+                    "status": "ok",
+                    "exam_id": exam["id"] if exam else None,
+                    "exam_title": exam["title"] if exam else exam_mgr.get_config().exam_title,
+                    "duration_minutes": exam.get("duration_minutes", 45) if exam else 45,
+                    "remaining_seconds": exam_mgr.get_remaining_seconds(),
+                    "questions": questions,
+                })
+            except Exception as exc:
+                self._send_json(500, {"error": f"Lỗi nạp đề thi: {exc}"})
+            return
+
+        if path == "/api/exam/submissions":
+            claimed_id = query.get("student_id", [""])[0].strip().upper() or None
+            student, err = self._authenticate_student(query, claimed_student_id=claimed_id)
+            if err:
+                self._send_json(err[0], err[1])
+                return
+            student_id = student.student_id
+            subs = exam_mgr.get_student_submissions(student_id)
+            self._send_json(200, {
+                "status": "ok",
+                "student_id": student_id,
+                "submissions": subs,
+            })
             return
 
         if path == "/api/exam/events":
-            self._handle_sse(query.get("student_id", [""])[0])
+            claimed_id = query.get("student_id", [""])[0].strip().upper() or None
+            student, err = self._authenticate_student(query, claimed_student_id=claimed_id, is_sse=True)
+            if err:
+                self._send_json(err[0], err[1])
+                return
+            self._handle_sse(student.student_id)
             return
 
         # Fallback to serving static files from web/
@@ -83,21 +174,91 @@ class ExamRequestHandler(SimpleHTTPRequestHandler):
             if not student_id:
                 self._send_json(400, {"error": "Mã sinh viên không được để trống"})
                 return
-            student = exam_mgr.register_student(student_id, name, client_ip)
+            try:
+                exam_mgr.ensure_active_exam()
+            except Exception:
+                pass
+
+            try:
+                student = exam_mgr.register_student(student_id, name, client_ip)
+            except FileExistsError as exc:
+                self._send_json(409, {"error": str(exc)})
+                return
+            except Exception as exc:
+                self._send_json(500, {"error": f"Lỗi đăng ký: {exc}"})
+                return
+
+            cfg = exam_mgr.get_config().to_dict()
+            cfg["remaining_seconds"] = exam_mgr.get_remaining_seconds()
             self._send_json(200, {
                 "status": "ok",
+                "token": student.token,
                 "student": student.to_dict(),
-                "config": exam_mgr.get_config().to_dict(),
+                "config": cfg,
             })
             return
 
+        if path == "/api/exam/reset_session":
+            student_id = data.get("student_id", "").strip().upper()
+            reason = data.get("reason", "Giám thị cấp lại phiên thi")
+            if not student_id:
+                self._send_json(400, {"error": "Thiếu student_id"})
+                return
+            try:
+                student = exam_mgr.reset_student_session(student_id, reason=reason, actor=f"SUPERVISOR_{client_ip}")
+                self._send_json(200, {
+                    "status": "ok",
+                    "message": f"Đã cấp lại phiên thi cho thí sinh {student_id}. Thí sinh có thể đăng nhập lại.",
+                })
+            except KeyError:
+                self._send_json(404, {"error": f"Sinh viên {student_id} chưa đăng ký vào phòng thi"})
+            except Exception as exc:
+                self._send_json(500, {"error": str(exc)})
+            return
+
+        if path == "/api/exam/save_draft":
+            claimed_id = data.get("student_id", "").strip().upper() or None
+            student, err = self._authenticate_student({}, claimed_student_id=claimed_id)
+            if err:
+                self._send_json(err[0], err[1])
+                return
+            student_id = student.student_id
+            question_id = data.get("question_id")
+            chosen = str(data.get("chosen", "")).strip().upper()
+            if question_id is None:
+                self._send_json(400, {"error": "Thiếu question_id"})
+                return
+            try:
+                qid = int(question_id)
+            except ValueError:
+                self._send_json(400, {"error": "question_id không hợp lệ"})
+                return
+            if chosen not in ("A", "B", "C", "D"):
+                self._send_json(400, {"error": "Đáp án phải thuộc A, B, C hoặc D"})
+                return
+
+            try:
+                exam_mgr.save_student_answer(student_id, qid, chosen)
+                self._send_json(200, {"status": "ok", "question_id": qid, "chosen": chosen})
+            except BufferError as exc:
+                self._send_json(429, {"error": str(exc)})
+            except PermissionError as exc:
+                self._send_json(403, {"error": str(exc)})
+            except ValueError as exc:
+                self._send_json(400, {"error": str(exc)})
+            except Exception as exc:
+                self._send_json(500, {"error": f"Lỗi lưu đáp án: {exc}"})
+            return
+
         if path == "/api/exam/violation":
-            student_id = data.get("student_id", "").strip()
+            claimed_id = data.get("student_id", "").strip().upper() or None
+            student, err = self._authenticate_student({}, claimed_student_id=claimed_id)
+            if err:
+                self._send_json(err[0], err[1])
+                return
+            student_id = student.student_id
             event = data.get("event", "UNKNOWN")
             detail = data.get("detail", "Vi phạm không xác định")
-            if not student_id:
-                self._send_json(400, {"error": "Missing student_id"})
-                return
             student, record = exam_mgr.record_violation(
                 student_id=student_id,
                 event_type=event,
@@ -113,19 +274,24 @@ class ExamRequestHandler(SimpleHTTPRequestHandler):
             return
 
         if path == "/api/exam/submit":
-            student_id = data.get("student_id", "").strip()
-            answers = data.get("answers", {})
-            if not student_id:
-                self._send_json(400, {"error": "Missing student_id"})
+            claimed_id = data.get("student_id", "").strip().upper() or None
+            student, err = self._authenticate_student({}, claimed_student_id=claimed_id)
+            if err:
+                self._send_json(err[0], err[1])
                 return
+            student_id = student.student_id
+            answers = data.get("answers", {})
             try:
                 student = exam_mgr.submit_exam(student_id, answers)
                 self._send_json(200, {
                     "status": "ok",
                     "student": student.to_dict(),
+                    "final_score": student.score,
                 })
             except KeyError:
                 self._send_json(404, {"error": "Student not found"})
+            except Exception as exc:
+                self._send_json(500, {"error": f"Lỗi nộp bài: {exc}"})
             return
 
         self._send_json(404, {"error": "Endpoint not found"})

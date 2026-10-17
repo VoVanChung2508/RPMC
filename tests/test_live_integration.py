@@ -72,6 +72,7 @@ class TestLiveIntegration(unittest.TestCase):
         reg_data = json.loads(resp_reg.read().decode("utf-8"))
         self.assertEqual(reg_data.get("status"), "ok")
         self.assertEqual(reg_data.get("student", {}).get("student_id"), "TEST_WEB_01")
+        token = reg_data.get("token", "")
 
         # 3. Violation
         url_viol = f"http://127.0.0.1:{self.http_port}/api/exam/violation"
@@ -80,7 +81,11 @@ class TestLiveIntegration(unittest.TestCase):
             "event": "EXIT_FULLSCREEN",
             "detail": "Thoát toàn màn hình qua web",
         }).encode("utf-8")
-        req_viol = urllib.request.Request(url_viol, data=post_viol, headers={"Content-Type": "application/json"})
+        req_viol = urllib.request.Request(
+            url_viol,
+            data=post_viol,
+            headers={"Content-Type": "application/json", "X-Student-Token": token},
+        )
         resp_viol = urllib.request.urlopen(req_viol)
         viol_data = json.loads(resp_viol.read().decode("utf-8"))
         self.assertEqual(viol_data.get("student", {}).get("violation_count"), 1)
