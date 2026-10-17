@@ -7,6 +7,8 @@ def build_sidebar(root, on_select):
     frame = ctk.CTkFrame(root, width=190, corner_radius=12)
     frame.pack_propagate(False)
     for name in (
+        "SM: Giám Sát Thi",
+        "PO: Quy Chế & Điểm",
         "Dashboard",
         "Clients",
         "Processes",

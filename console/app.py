@@ -1,17 +1,27 @@
 from __future__ import annotations
 
 import os
+import sys
 import threading
 import tkinter as tk
+from pathlib import Path
 from tkinter import messagebox
+
+# Đảm bảo nhận thư mục gốc dự án khi chạy file trực tiếp
+project_root = str(Path(__file__).resolve().parent.parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 import customtkinter as ctk
 
+from common.env import load_dotenv
 from console.network import ConsoleNetworkClient
 from console.theme import CyberpunkTheme
 from console.views.audit import build_audit
 from console.views.clients import build_clients
 from console.views.dashboard import build_dashboard
+from console.views.exam_po import build_exam_po
+from console.views.exam_sm import build_exam_sm
 from console.views.files import build_files
 from console.views.header import build_header
 from console.views.processes import build_processes
@@ -20,6 +30,7 @@ from console.views.sidebar import build_sidebar
 from console.views.terminal import build_terminal
 
 
+# Main admin console window. It wires the UI pages to the network client and tracks the selected agent.
 class RPMCApp(ctk.CTk):
     AGENT_OPERATIONS = {
         "system.info",
@@ -33,6 +44,7 @@ class RPMCApp(ctk.CTk):
 
     def __init__(self):
         super().__init__()
+        load_dotenv()
         self.title("RPMC Console")
         self.geometry("1280x760")
         self.minsize(960, 640)
@@ -59,6 +71,8 @@ class RPMCApp(ctk.CTk):
         self.page_host.pack(side="right", fill="both", expand=True)
         request = self.request
         self.pages = {
+            "SM: Giám Sát Thi": build_exam_sm(self.page_host, request),
+            "PO: Quy Chế & Điểm": build_exam_po(self.page_host, request),
             "Dashboard": build_dashboard(self.page_host, request),
             "Clients": build_clients(self.page_host, request),
             "Processes": build_processes(self.page_host, request),
@@ -69,7 +83,7 @@ class RPMCApp(ctk.CTk):
         }
         for page in self.pages.values():
             page.place(relx=0, rely=0, relwidth=1, relheight=1)
-        self.show_page("Dashboard")
+        self.show_page("SM: Giám Sát Thi")
         self.after(250, self.refresh_clients)
 
     def show_page(self, name: str) -> None:

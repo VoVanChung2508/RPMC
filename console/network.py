@@ -10,6 +10,8 @@ from common.protocol import CommandType, Frame, FrameCodec, FrameType
 from common.security import require_loopback, require_private_network
 
 
+# Small RPC client used by the console UI to talk to the server.
+# It authenticates once, sends a JSON operation, and reads back a single response frame.
 class ConsoleNetworkClient:
     def __init__(
         self,

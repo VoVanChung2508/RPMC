@@ -13,6 +13,8 @@ from agent.screen import ScreenCaptureService
 from agent.system_svc import SystemService
 
 
+# Agent-side entry point for server requests.
+# It validates each command, executes the matching action, and packs the result back into a protocol frame.
 class CommandHandler:
     def __init__(self, root_dir: str = ".", allow_termination: bool = False):
         self.system_service = SystemService()

@@ -16,9 +16,12 @@ from common.protocol import CommandType, Frame, FrameCodec, FrameType
 from common.security import require_loopback, require_private_network
 from server.audit import AuditLogger
 from server.dispatcher import CommandDispatcher
+from server.exam_manager import ExamManager
 from server.rbac import Role
 
 
+# Active agent slot kept by the server.
+# Each connected client has a socket, queue, and lifecycle state for request dispatching.
 @dataclass
 class AgentConnection:
     client_id: str
@@ -36,6 +39,7 @@ class AgentRequest:
     error: str | None = None
 
 
+# Accepts TCP connections, authenticates console/agent peers, and routes every RPC to the right handler.
 class ServerListener:
     def __init__(
         self,
@@ -46,7 +50,7 @@ class ServerListener:
         audit_logger: AuditLogger | None = None,
         dispatcher: CommandDispatcher | None = None,
     ):
-        self.host = host
+        self.host = host.strip()
         self.port = port
         self.admin_token = admin_token or os.environ.get("RPMC_ADMIN_TOKEN", "")
         self.agent_token = agent_token or os.environ.get("RPMC_AGENT_TOKEN", "")
@@ -101,9 +105,19 @@ class ServerListener:
             self.stop()
 
     def _handle_connection(self, conn: socket.socket) -> None:
+        # First frame decides whether this socket is an agent, a console session, or an exam-specific client.
         with conn:
             try:
                 first = FrameCodec.read_frame(conn)
+                if first.command_type in (
+                    CommandType.EXAM_STUDENT_REGISTER,
+                    CommandType.EXAM_VIOLATION_REPORT,
+                    CommandType.EXAM_SUBMIT_REQUEST,
+                    CommandType.EXAM_CONFIG_GET,
+                ):
+                    self._serve_exam_tcp_client(conn, first)
+                    return
+
                 auth = self._json(first.payload)
                 if first.command_type == CommandType.AUTH_REQUEST:
                     self._serve_agent(conn, auth)
@@ -120,7 +134,9 @@ class ServerListener:
     def _serve_agent(self, conn: socket.socket, auth: dict) -> None:
         client_id = str(auth.get("client_id", "")).strip()
         token = str(auth.get("token", ""))
-        if len(client_id) < 1 or len(client_id) > 128 or not hmac.compare_digest(token, self.agent_token):
+        if len(client_id) < 1 or len(client_id) > 128 or not hmac.compare_digest(
+            token.encode("utf-8"), self.agent_token.encode("utf-8")
+        ):
             raise PermissionError("Agent authentication failed")
         agent = AgentConnection(client_id, conn)
         with self._agents_lock:
@@ -162,7 +178,8 @@ class ServerListener:
                     del self._agents[client_id]
 
     def _serve_console(self, conn: socket.socket, auth: dict) -> None:
-        if not hmac.compare_digest(str(auth.get("token", "")), self.admin_token):
+        token = str(auth.get("token", ""))
+        if not hmac.compare_digest(token.encode("utf-8"), self.admin_token.encode("utf-8")):
             raise PermissionError("Console authentication failed")
         conn.sendall(FrameCodec.encode(Frame(FrameType.CONTROL, CommandType.AUTH_RESPONSE, b'{"status":"ok","role":"ADMIN"}')))
         actor = str(auth.get("actor", "console"))[:128]
@@ -209,6 +226,9 @@ class ServerListener:
             valid, message = self.audit.verify()
             self.audit.log(actor, operation, "ok" if valid else "failed", {"message": message})
             return {"valid": valid, "message": message}
+
+        if operation.startswith("exam."):
+            return self._dispatch_exam(request, actor)
 
         command, permission = self.dispatcher.resolve(Role.ADMIN, operation)
         client_id = str(request.get("client_id", "")).strip()
@@ -339,6 +359,83 @@ class ServerListener:
         if pending.response is None:
             raise RuntimeError("Agent returned no response")
         return pending.response
+
+    def _dispatch_exam(self, request: dict, actor: str) -> dict:
+        op = str(request.get("op", ""))
+        exam_mgr = ExamManager.get_instance()
+        if op == "exam.config.get":
+            return {"config": exam_mgr.get_config().to_dict()}
+        if op == "exam.config.set":
+            cfg = exam_mgr.update_config(request.get("config", {}), actor=actor)
+            return {"status": "ok", "config": cfg.to_dict()}
+        if op == "exam.students.list":
+            return {"students": exam_mgr.get_students()}
+        if op == "exam.student.warn":
+            student_id = str(request.get("student_id", ""))
+            message = str(request.get("message", "Giám thị nhắc nhở tập trung làm bài!"))
+            student = exam_mgr.send_warning(student_id, message, actor=actor)
+            return {"status": "ok", "student": student.to_dict()}
+        if op == "exam.student.penalty":
+            student_id = str(request.get("student_id", ""))
+            reason = str(request.get("reason", "Trừ điểm thủ công bởi giám thị"))
+            student, rec = exam_mgr.record_violation(student_id, "MANUAL_PENALTY", reason, manual=True, actor=actor)
+            return {"status": "ok", "student": student.to_dict(), "violation": rec.to_dict()}
+        if op == "exam.student.lock":
+            student_id = str(request.get("student_id", ""))
+            reason = str(request.get("reason", "Giám thị đình chỉ quyền làm bài"))
+            student = exam_mgr.lock_student(student_id, reason, actor=actor)
+            return {"status": "ok", "student": student.to_dict()}
+        if op == "exam.report.export":
+            return {"csv": exam_mgr.export_csv_report()}
+        if op == "exam.audit.list":
+            return {"entries": exam_mgr.get_audit_logs()}
+        raise ValueError(f"Unknown exam operation: {op}")
+
+    def _serve_exam_tcp_client(self, conn: socket.socket, initial_frame: Frame) -> None:
+        exam_mgr = ExamManager.get_instance()
+        client_ip = conn.getpeername()[0]
+        frame = initial_frame
+        while not self._stop_event.is_set():
+            try:
+                payload = self._json(frame.payload)
+                if frame.command_type == CommandType.EXAM_STUDENT_REGISTER:
+                    student = exam_mgr.register_student(
+                        payload.get("student_id", ""),
+                        payload.get("name", ""),
+                        client_ip,
+                    )
+                    resp = Frame(FrameType.CONTROL, CommandType.EXAM_STUDENT_UPDATE, json.dumps(student.to_dict()).encode("utf-8"))
+                    conn.sendall(FrameCodec.encode(resp))
+                elif frame.command_type == CommandType.EXAM_VIOLATION_REPORT:
+                    student, violation = exam_mgr.record_violation(
+                        payload.get("student_id", ""),
+                        payload.get("event", "UNKNOWN"),
+                        payload.get("detail", ""),
+                        manual=False,
+                        actor=f"TCP_{payload.get('student_id', client_ip)}",
+                    )
+                    resp = Frame(FrameType.CONTROL, CommandType.EXAM_STUDENT_UPDATE, json.dumps({
+                        "student": student.to_dict(),
+                        "violation": violation.to_dict(),
+                    }).encode("utf-8"))
+                    conn.sendall(FrameCodec.encode(resp))
+                elif frame.command_type == CommandType.EXAM_CONFIG_GET:
+                    cfg = exam_mgr.get_config()
+                    resp = Frame(FrameType.CONTROL, CommandType.EXAM_CONFIG_GET, json.dumps(cfg.to_dict()).encode("utf-8"))
+                    conn.sendall(FrameCodec.encode(resp))
+                elif frame.command_type == CommandType.EXAM_SUBMIT_REQUEST:
+                    student = exam_mgr.submit_exam(
+                        payload.get("student_id", ""),
+                        payload.get("answers", {}),
+                    )
+                    resp = Frame(FrameType.CONTROL, CommandType.EXAM_STUDENT_UPDATE, json.dumps(student.to_dict()).encode("utf-8"))
+                    conn.sendall(FrameCodec.encode(resp))
+                else:
+                    conn.sendall(self._encode_error("INVALID_COMMAND", "Unsupported exam TCP command"))
+
+                frame = FrameCodec.read_frame(conn)
+            except (ConnectionError, OSError, ValueError):
+                break
 
     @staticmethod
     def _json(payload: bytes) -> dict:

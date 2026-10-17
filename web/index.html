@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hệ Thống Giám Sát Thi Trực Tuyến LAN - Scrum Developers</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Background glow effects -->
+  <div class="bg-gradient-orb orb-1"></div>
+  <div class="bg-gradient-orb orb-2"></div>
+
+  <!-- STAGE 1: ĐĂNG NHẬP THI -->
+  <div id="login-stage" class="stage-container active">
+    <div class="card login-card">
+      <div class="badge-tag">HỆ THỐNG GIÁM SÁT THI TRỰC TUYẾN LAN</div>
+      <h1 class="card-title">Phòng Thi Trắc Nghiệm</h1>
+      <p class="card-subtitle">Môn: <strong>Lập Trình Mạng</strong> &bull; Kiến trúc Scrum Client</p>
+
+      <form id="login-form">
+        <div class="form-group">
+          <label for="student-id">Mã số sinh viên (MSSV):</label>
+          <input type="text" id="student-id" placeholder="Ví dụ: B21DCCN001" required autocomplete="off">
+        </div>
+
+        <div class="form-group">
+          <label for="student-name">Họ và tên thí sinh:</label>
+          <input type="text" id="student-name" placeholder="Ví dụ: Nguyễn Văn An" required autocomplete="off">
+        </div>
+
+        <div class="notice-box">
+          <div class="notice-icon">⚠️</div>
+          <div class="notice-text">
+            <strong>Quy chế thi trực tuyến:</strong>
+            <ul>
+              <li>Hệ thống yêu cầu chạy ở chế độ <strong>Toàn Màn Hình (Fullscreen)</strong>.</li>
+              <li>Mọi hành vi chuyển tab, mất focus chuột hoặc thoát Fullscreen đều bị <strong>trừ điểm trực tiếp</strong> và gửi cảnh báo về Giám thị.</li>
+            </ul>
+          </div>
+        </div>
+
+        <button type="submit" id="btn-enter" class="btn btn-primary">Vào Phòng Thi</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- STAGE 2: HƯỚNG DẪN & KÍCH HOẠT FULLSCREEN -->
+  <div id="ready-stage" class="stage-container">
+    <div class="card ready-card">
+      <div class="badge-tag status-green">SẴN SÀNG LÀM BÀI</div>
+      <h2 id="ready-welcome">Chào mừng thí sinh</h2>
+      <div class="exam-info-grid">
+        <div class="info-item">
+          <span class="info-label">Điểm ban đầu</span>
+          <span class="info-val" id="info-init-score">10.0</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Trừ điểm / vi phạm</span>
+          <span class="info-val text-red" id="info-penalty">-1.0 đ</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Giới hạn vi phạm</span>
+          <span class="info-val text-orange" id="info-max-violation">3 lần</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Thời gian làm bài</span>
+          <span class="info-val" id="info-duration">45 phút</span>
+        </div>
+      </div>
+
+      <div class="fullscreen-prompt">
+        <p>Bấm nút bên dưới để kích hoạt chế độ Toàn Màn Hình và tính giờ bắt đầu làm bài:</p>
+        <button id="btn-start-exam" class="btn btn-success btn-large">
+          <span>🚀</span> Bắt Đầu Làm Bài (Kích Hoạt Fullscreen)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STAGE 3: GIAO DIỆN LÀM BÀI THI -->
+  <div id="exam-stage" class="stage-container">
+    <!-- Top HUD Bar -->
+    <header class="exam-header">
+      <div class="header-left">
+        <div class="exam-meta">
+          <span class="exam-title-badge">LẬP TRÌNH MẠNG</span>
+          <span class="student-pill" id="hud-student-info">SV: ...</span>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <div class="timer-display">
+          <span class="timer-icon">⏱️</span>
+          <span id="exam-timer" class="timer-digits">45:00</span>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <div class="stat-pill score-pill">
+          <span class="stat-label">Điểm:</span>
+          <span id="hud-score" class="stat-value">10.0</span>
+        </div>
+        <div class="stat-pill violation-pill" id="violation-pill-container">
+          <span class="stat-label">Vi phạm:</span>
+          <span id="hud-violations" class="stat-value text-red">0 / 3</span>
+        </div>
+        <div class="connection-status-dot connected" title="Kết nối Server LAN"></div>
+      </div>
+    </header>
+
+    <!-- Main Exam Questions Area -->
+    <main class="exam-main">
+      <div class="questions-container" id="questions-container">
+        <!-- Rendered dynamically by app.js -->
+      </div>
+
+      <div class="exam-footer">
+        <button id="btn-submit-exam" class="btn btn-primary btn-submit">
+          <span>📤</span> Nộp Bài Thi
+        </button>
+      </div>
+    </main>
+  </div>
+
+  <!-- STAGE 4: KẾT QUẢ / HOÀN THÀNH -->
+  <div id="result-stage" class="stage-container">
+    <div class="card result-card">
+      <div class="badge-tag status-green">ĐÃ NỘP BÀI THÀNH CÔNG</div>
+      <h2>Kết Quả Bài Thi</h2>
+      <p id="result-student-name">Thí sinh: ...</p>
+      <div class="final-score-circle">
+        <span id="result-final-score">10.0</span>
+        <span class="score-max">/ 10</span>
+      </div>
+      <div class="result-details" id="result-details">
+        <!-- Details inserted by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL KHÓA BÀI THI KHI VI PHẠM TỐI ĐA -->
+  <div id="locked-overlay" class="modal-overlay">
+    <div class="modal-content locked-card">
+      <div class="locked-icon">🔒</div>
+      <h2 class="text-red">BÀI THI ĐÃ BỊ KHÓA!</h2>
+      <p class="locked-reason" id="locked-reason">
+        Bạn đã vượt quá số lần vi phạm quy chế thi trực tuyến cho phép.
+      </p>
+      <div class="locked-info-box">
+        <p>Hệ thống đã tự động đình chỉ quyền làm bài và thông báo tới <strong>Giám thị phòng thi (Scrum Master)</strong>.</p>
+        <p>Vui lòng giữ nguyên màn hình và chờ cán bộ coi thi xử lý.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL CẢNH BÁO VI PHẠM TỨC THÌ -->
+  <div id="alert-toast" class="alert-toast">
+    <div class="toast-icon">⚠️</div>
+    <div class="toast-body">
+      <h4 id="toast-title">CẢNH BÁO VI PHẠM</h4>
+      <p id="toast-message">Bạn vừa chuyển tab! Điểm bị trừ 1.0 đ</p>
+    </div>
+  </div>
+
+  <!-- MODAL CẢNH BÁO TỪ GIÁM THỊ (DIRECT WARNING) -->
+  <div id="supervisor-warning-modal" class="modal-overlay">
+    <div class="modal-content supervisor-card">
+      <div class="supervisor-icon">📢</div>
+      <h3>THÔNG ĐIỆP TỪ GIÁM THỊ (SCRUM MASTER)</h3>
+      <div class="supervisor-message-box" id="supervisor-message-text">
+        Nhắc nhở: Hãy tập trung vào màn hình làm bài thi!
+      </div>
+      <button id="btn-ack-warning" class="btn btn-warning">Tôi Đã Hiểu Và Tiếp Tục Thi</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

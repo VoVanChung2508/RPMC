@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import List
 
+# Shared binary protocol for agent/server/console communication.
+# Every message has a fixed 12-byte header plus a payload blob.
+
 
 class FrameType(IntEnum):
     CONTROL = 0x0001
@@ -38,6 +41,15 @@ class CommandType(IntEnum):
     SCREEN_START_REQUEST = 0x0501
     SCREEN_STOP_REQUEST = 0x0502
     SCREEN_TILE_DATA = 0x0503
+    EXAM_CONFIG_GET = 0x0601
+    EXAM_CONFIG_SET = 0x0602
+    EXAM_STUDENT_REGISTER = 0x0603
+    EXAM_VIOLATION_REPORT = 0x0604
+    EXAM_STUDENT_UPDATE = 0x0605
+    EXAM_INTERVENTION_ACTION = 0x0606
+    EXAM_SUBMIT_REQUEST = 0x0607
+    EXAM_REPORT_EXPORT = 0x0608
+    EXAM_STATE_SYNC = 0x0609
     GENERIC_RESPONSE = 0x0901
     ERROR_RESPONSE = 0x0999
 

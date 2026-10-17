@@ -23,6 +23,7 @@ class SecurityError(RuntimeError):
 
 
 def require_loopback(host: str) -> None:
+    host = host.strip()
     try:
         if ipaddress.ip_address(host).is_loopback:
             return
@@ -33,6 +34,7 @@ def require_loopback(host: str) -> None:
 
 
 def require_private_network(host: str) -> None:
+    host = host.strip()
     try:
         ip = ipaddress.ip_address(host)
         if ip.is_loopback or ip.is_private or ip.is_unspecified:
