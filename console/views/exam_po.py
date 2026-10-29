@@ -350,10 +350,14 @@ def build_exam_po(root, request):
             combo_banks.configure(values=["-- Chưa có ngân hàng đề nào (Hãy bấm Nhập đề) --"])
             combo_banks.set("-- Chưa có ngân hàng đề nào (Hãy bấm Nhập đề) --")
 
+    def on_banks_err(err):
+        combo_banks.configure(values=["-- ⚠️ Chưa kết nối Server (Bấm Làm mới) --"])
+        combo_banks.set("-- ⚠️ Chưa kết nối Server (Bấm Làm mới) --")
+
     def load_banks_only():
         combo_banks.configure(values=["-- Đang tải ngân hàng đề... --"])
         combo_banks.set("-- Đang tải ngân hàng đề... --")
-        request("exam.banks.list", on_banks)
+        request("exam.banks.list", on_banks, on_error=on_banks_err)
 
     def load_all_data():
         load_banks_only()

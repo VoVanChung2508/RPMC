@@ -151,7 +151,7 @@ class RPMCApp(ctk.CTk):
             self._screen_stop.set()
         self.destroy()
 
-    def request(self, operation: str, callback=None, **fields) -> None:
+    def request(self, operation: str, callback=None, on_error=None, **fields) -> None:
         if operation in self.AGENT_OPERATIONS:
             client_id = self.target_agent.get().strip()
             if not client_id:
@@ -178,14 +178,19 @@ class RPMCApp(ctk.CTk):
             try:
                 result = client.request(operation, **fields)
             except (OSError, ConnectionError, RuntimeError, ValueError, KeyError) as exc:
-                self.after(0, lambda error=exc: self._request_failed(operation, error))
+                self.after(0, lambda error=exc: self._request_failed(operation, error, on_error))
                 return
             self.after(0, lambda: self._request_succeeded(operation, result, callback))
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _request_failed(self, operation: str, error: Exception) -> None:
+    def _request_failed(self, operation: str, error: Exception, on_error=None) -> None:
         self.status.configure(text=f"{operation} failed: {error}", text_color=CyberpunkTheme.RED)
+        if on_error is not None:
+            try:
+                on_error(error)
+            except Exception:
+                pass
 
     def _request_succeeded(self, operation: str, result: dict, callback) -> None:
         self.status.configure(text=f"Connected · {operation} completed", text_color=CyberpunkTheme.GREEN)

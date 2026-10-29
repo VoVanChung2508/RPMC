@@ -43,7 +43,7 @@ def parse_timestamp(val: Any) -> Optional[float]:
 
 class ExamManager:
     _instance: Optional[ExamManager] = None
-    _lock = threading.Lock()
+    _lock = threading.RLock()
     _global_timer_thread: Optional[threading.Thread] = None
     _global_stop_timer: Optional[threading.Event] = None
 
