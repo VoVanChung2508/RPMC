@@ -101,7 +101,31 @@ Phục vụ quản lý, hỗ trợ kỹ thuật và giám sát máy trạm trong
 
 ---
 
-## 🚀 HƯỚNG DẪN CÀI ĐẶT & CHẠY ỨNG DỤNG (CẤU HÌNH 1 LẦN)
+## ⚡ KHỞI CHẠY NHANH (1 BƯỚC DUY NHẤT)
+1. **Double-click `start_all.bat`** (hoặc gõ lệnh: `python rpmc.py all`).
+2. Hệ thống tự động kiểm tra hệ thống (Preflight), chạy Server, mở Bảng điều khiển Giám thị (Console) và tự mở Web bài thi cho thí sinh (`http://localhost:8081`).
+3. Đóng cửa sổ Console để hệ thống tự động dọn dẹp và dừng Server an toàn.
+
+---
+
+## 🕹️ ĐIỂM VÀO ĐIỀU PHỐI `rpmc.py` & CÁC FILE `.BAT`
+
+Hệ thống cung cấp file điều phối `rpmc.py` và các file batch tiện lợi tại thư mục gốc:
+
+| Thao tác (Double-click) | Lệnh tương đương | Ý nghĩa |
+| :--- | :--- | :--- |
+| **`start_all.bat`** | `python rpmc.py all` | Khởi động trọn gói: Server + Console + Web bài thi |
+| **`start_server.bat`** | `python rpmc.py server` | Chạy máy chủ RPMC (TCP 8090, Web thi 8081, Soạn đề 8082) |
+| **`start_console.bat`** | `python rpmc.py console` | Chạy giao diện Bảng điều khiển Giám thị / Quản trị |
+| **`start_agent.bat`** | `python rpmc.py agent` | Chạy máy trạm Agent (quản trị máy con) |
+| **`start_editor.bat`** | `python rpmc.py editor` | Chạy riêng giao diện Web nhập đề Word (`:8082`) |
+| **`demo.bat`** | `python rpmc.py demo` | Giả lập 2 thí sinh cùng thi và vi phạm trực tiếp |
+| *(Dòng lệnh)* | `python rpmc.py student SV01 "Nguyễn Văn A"` | Mô phỏng 1 thí sinh gửi gói tin Socket TCP thuần |
+| *(Dòng lệnh)* | `python rpmc.py init` | Tự động sinh token bảo mật ngẫu nhiên vào `.env` & nạp DB |
+
+---
+
+## 🚀 HƯỚNG DẪN CÀI ĐẶT & CHẠY NÂNG CAO (LỆNH GỐC)
 
 ### 1. Chuẩn bị môi trường
 Cài đặt thư viện phụ thuộc:

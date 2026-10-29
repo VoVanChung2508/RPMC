@@ -17,6 +17,7 @@ import tools.exam_editor.exam_editor_server as _server_module
 
 # Giữ nguyên các tham chiếu module-level cho test patch và mock
 Handler = _server_module.Handler
+ExamEditorServer = _server_module.ExamEditorServer
 main = _server_module.main
 
 if __name__ == "__main__":

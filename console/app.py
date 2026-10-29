@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 import threading
@@ -29,6 +30,24 @@ from console.views.screen import build_screen
 from console.views.sidebar import build_sidebar
 from console.views.terminal import build_terminal
 
+SETTINGS_PATH = Path(project_root) / "console_settings.json"
+
+
+def load_console_settings() -> dict:
+    try:
+        if SETTINGS_PATH.exists():
+            return json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+def save_console_settings(settings: dict) -> None:
+    try:
+        SETTINGS_PATH.write_text(json.dumps(settings, indent=2, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
 
 # Main admin console window. It wires the UI pages to the network client and tracks the selected agent.
 class RPMCApp(ctk.CTk):
@@ -54,11 +73,20 @@ class RPMCApp(ctk.CTk):
         self.pages: dict[str, ctk.CTkFrame] = {}
         self._screen_stop: threading.Event | None = None
 
+        # Nạp cấu hình phiên làm việc gần nhất
+        self.settings = load_console_settings()
+        initial_host = self.settings.get("host", "127.0.0.1")
+        self.current_role = self.settings.get("role", "SM: Giám Sát Thi")
+        auto_connect_default = bool(self.settings.get("auto_connect", True))
+        self.auto_connect_var = tk.BooleanVar(value=auto_connect_default)
+
         self.header, self.host_entry, self.token_entry, self.target_menu, self.status = build_header(
             self,
             self.target_agent,
             self.refresh_clients,
             os.environ.get("RPMC_ADMIN_TOKEN", ""),
+            initial_host=initial_host,
+            auto_connect_var=self.auto_connect_var,
         )
         self.header.pack(fill="x", padx=16, pady=(16, 8))
 
@@ -83,15 +111,40 @@ class RPMCApp(ctk.CTk):
         }
         for page in self.pages.values():
             page.place(relx=0, rely=0, relwidth=1, relheight=1)
-        self.show_page("SM: Giám Sát Thi")
-        self.after(250, self.refresh_clients)
+
+        # Mở tab tương ứng với vai trò đã lưu
+        self.show_page(self.current_role)
+
+        # Tự động kết nối nếu được bật
+        self.after(250, self._maybe_auto_connect)
 
     def show_page(self, name: str) -> None:
+        self.current_role = name
         page = self.pages.get(name)
         if page is not None:
             page.tkraise()
 
+    def _maybe_auto_connect(self) -> None:
+        host = self.host_entry.get().strip() or "127.0.0.1"
+        token = self.token_entry.get().strip()
+        if self.auto_connect_var.get() and token and host in ("127.0.0.1", "localhost", "0.0.0.0"):
+            self.refresh_clients()
+
+    def _save_current_settings(self) -> None:
+        try:
+            port = int(os.environ.get("RPMC_SERVER_PORT", "8090"))
+        except ValueError:
+            port = 8090
+        settings = {
+            "host": self.host_entry.get().strip() or "127.0.0.1",
+            "port": port,
+            "role": getattr(self, "current_role", "SM: Giám Sát Thi"),
+            "auto_connect": self.auto_connect_var.get() if hasattr(self, "auto_connect_var") else True,
+        }
+        save_console_settings(settings)
+
     def _close_window(self) -> None:
+        self._save_current_settings()
         if self._screen_stop is not None:
             self._screen_stop.set()
         self.destroy()
@@ -134,6 +187,7 @@ class RPMCApp(ctk.CTk):
 
     def _request_succeeded(self, operation: str, result: dict, callback) -> None:
         self.status.configure(text=f"Connected · {operation} completed", text_color=CyberpunkTheme.GREEN)
+        self._save_current_settings()
         if operation == "client.list":
             clients = [item["client_id"] for item in result.get("clients", [])]
             self.target_menu.configure(values=clients or ["(no agents)"])

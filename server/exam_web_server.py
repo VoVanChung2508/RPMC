@@ -149,6 +149,15 @@ class ExamRequestHandler(SimpleHTTPRequestHandler):
             self._handle_sse(student.student_id)
             return
 
+        if path in ("/editor", "/editor/"):
+            editor_port = int(os.environ.get("EXAM_EDITOR_PORT", "8082"))
+            host_header = self.headers.get("Host", "localhost").split(":")[0]
+            self.send_response(302)
+            self.send_header("Location", f"http://{host_header}:{editor_port}/")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            return
+
         # Fallback to serving static files from web/
         if path == "/":
             self.path = "/index.html"

@@ -20,9 +20,11 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Optional
 from urllib.parse import unquote
 
 # Đảm bảo nhận thư mục gốc dự án khi chạy file trực tiếp
@@ -262,6 +264,35 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):  # log gọn
         print(f"[exam-editor] {self.address_string()} {fmt % args}")
+
+
+class ExamEditorServer:
+    """Quản lý máy chủ Web nhập đề thi Word, hỗ trợ chạy trong thread riêng."""
+    def __init__(self, host: str = "0.0.0.0", port: int = 8082):
+        self.host = host
+        self.port = port
+        self.server: Optional[ThreadingHTTPServer] = None
+        self._thread: Optional[threading.Thread] = None
+
+    def start(self) -> None:
+        last_error = None
+        for candidate_port in range(self.port, self.port + 10):
+            try:
+                self.server = ThreadingHTTPServer((self.host, candidate_port), Handler)
+                self.port = candidate_port
+                self._thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+                self._thread.start()
+                return
+            except OSError as exc:
+                last_error = exc
+                continue
+        if last_error:
+            raise last_error
+
+    def stop(self) -> None:
+        if self.server:
+            self.server.shutdown()
+            self.server.server_close()
 
 
 def main() -> None:
