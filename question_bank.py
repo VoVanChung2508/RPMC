@@ -22,8 +22,16 @@ from typing import Optional
 
 from docx_parser import ParsedQuestion, parse_docx, validate_questions
 
-SCHEMA_FILE = Path(__file__).with_name("schema.sql")
-SCHEMA_V2_FILE = Path(__file__).with_name("schema_v2.sql")
+def _resolve_schema_path(filename: str) -> Path:
+    db_path = Path(__file__).parent / "database" / filename
+    if db_path.exists():
+        return db_path
+    return Path(__file__).with_name(filename)
+
+
+SCHEMA_FILE = _resolve_schema_path("schema.sql")
+SCHEMA_V2_FILE = _resolve_schema_path("schema_v2.sql")
+SCHEMA_V3_FILE = _resolve_schema_path("schema_v3.sql")
 
 
 def get_dsn() -> str:
@@ -50,6 +58,7 @@ def init_schema(conn) -> None:
     Khởi tạo hoặc cập nhật schema cơ sở dữ liệu theo đúng thứ tự:
     1. schema.sql: Cấu trúc ngân hàng đề, câu hỏi, bài nộp ban đầu
     2. schema_v2.sql: Cột trạng thái kỳ thi (status, is_active, started_at, ended_at) và bảng kết quả
+    3. schema_v3.sql: Quy chế thi, vi phạm, quản lý máy trạm (agents) và kiểm toán băm SHA-256
     An toàn khi chạy lại nhiều lần (IF NOT EXISTS).
     """
     if not SCHEMA_FILE.exists():
@@ -60,6 +69,10 @@ def init_schema(conn) -> None:
     if SCHEMA_V2_FILE.exists():
         schema2 = SCHEMA_V2_FILE.read_text(encoding="utf-8")
         conn.execute(schema2)
+
+    if SCHEMA_V3_FILE.exists():
+        schema3 = SCHEMA_V3_FILE.read_text(encoding="utf-8")
+        conn.execute(schema3)
 
     conn.commit()
 
@@ -204,7 +217,7 @@ def main(argv=None) -> int:
         with psycopg.connect(dsn) as conn:
             if args.cmd == "init":
                 init_schema(conn)
-                print("✅ Đã áp dụng thành công schema.sql và schema_v2.sql.")
+                print("✅ Đã áp dụng thành công schema.sql, schema_v2.sql và schema_v3.sql.")
             elif args.cmd == "list":
                 for r in conn.execute(
                     """SELECT b.id, b.title, b.subject, count(q.id), b.created_at::date

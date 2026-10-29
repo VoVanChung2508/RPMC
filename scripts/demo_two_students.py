@@ -78,10 +78,11 @@ def main() -> int:
         import psycopg
         with psycopg.connect(test_dsn) as conn:
             from pathlib import Path
-            schema_1 = Path("schema.sql").read_text(encoding="utf-8")
-            schema_2 = Path("schema_v2.sql").read_text(encoding="utf-8")
-            conn.execute(schema_1)
-            conn.execute(schema_2)
+            def _get_schema(name: str) -> str:
+                p = Path("database") / name
+                return p.read_text(encoding="utf-8") if p.exists() else Path(name).read_text(encoding="utf-8")
+            conn.execute(_get_schema("schema.sql"))
+            conn.execute(_get_schema("schema_v2.sql"))
             conn.commit()
 
             with conn.transaction():

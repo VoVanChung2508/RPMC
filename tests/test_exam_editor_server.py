@@ -2,6 +2,7 @@ import json
 import os
 import threading
 import unittest
+import unittest.mock
 import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
@@ -154,10 +155,11 @@ class TestExamEditorServer(unittest.TestCase):
 
         # Đảm bảo schema đã được khởi tạo trong test database
         with psycopg.connect(test_dsn) as conn:
-            schema_1 = Path("schema.sql").read_text(encoding="utf-8")
-            schema_2 = Path("schema_v2.sql").read_text(encoding="utf-8")
-            conn.execute(schema_1)
-            conn.execute(schema_2)
+            def _get_schema(name: str) -> str:
+                p = Path("database") / name
+                return p.read_text(encoding="utf-8") if p.exists() else Path(name).read_text(encoding="utf-8")
+            conn.execute(_get_schema("schema.sql"))
+            conn.execute(_get_schema("schema_v2.sql"))
             conn.commit()
 
         test_title = "Ngân hàng đề Test Save Editor"

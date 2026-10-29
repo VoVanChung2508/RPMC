@@ -92,7 +92,7 @@ def main() -> int:
         return 1
 
     # -------------------------------------------------------------
-    # BƯỚC 4: Kiểm tra các bảng & cột của schema.sql và schema_v2.sql
+    # BƯỚC 4: Kiểm tra các bảng & cột của schema.sql, schema_v2.sql và schema_v3.sql
     # -------------------------------------------------------------
     required_tables = [
         "question_banks",
@@ -101,6 +101,11 @@ def main() -> int:
         "exams",
         "submissions",
         "student_exam_results",
+        "exam_configs",
+        "exam_violations",
+        "agents",
+        "agent_hardware_metrics",
+        "system_audit_logs",
     ]
     required_exam_columns = ["status", "is_active", "started_at", "ended_at"]
 

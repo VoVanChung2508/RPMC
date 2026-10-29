@@ -330,12 +330,13 @@ class TestPostgresExamRepositoryIntegration(unittest.TestCase):
 
         cls.repo = PostgresExamRepository(test_dsn)
         import psycopg
-        # Khởi tạo schema từ schema.sql và schema_v2.sql
+        # Khởi tạo schema từ database/schema.sql và database/schema_v2.sql
         with psycopg.connect(test_dsn) as conn:
-            schema_1 = Path("schema.sql").read_text(encoding="utf-8")
-            schema_2 = Path("schema_v2.sql").read_text(encoding="utf-8")
-            conn.execute(schema_1)
-            conn.execute(schema_2)
+            def _get_schema(name: str) -> str:
+                p = Path("database") / name
+                return p.read_text(encoding="utf-8") if p.exists() else Path(name).read_text(encoding="utf-8")
+            conn.execute(_get_schema("schema.sql"))
+            conn.execute(_get_schema("schema_v2.sql"))
             conn.commit()
 
         # Dọn dẹp dữ liệu sót từ lần chạy trước (dựa vào tiêu đề cố định), đảm bảo chạy lại nhiều lần vẫn xanh
