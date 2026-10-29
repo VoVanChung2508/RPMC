@@ -75,8 +75,22 @@ def build_exam_po(root, request):
     ctk.CTkLabel(left_cfg, text="Chọn ngân hàng đề thi:", font=ctk.CTkFont(size=12)).pack(anchor="w", padx=16, pady=(4, 2))
 
     bank_items: list[dict] = []
-    combo_banks = ctk.CTkComboBox(left_cfg, values=["-- Đang tải ngân hàng đề... --"], state="readonly")
-    combo_banks.pack(fill="x", padx=16, pady=(0, 8))
+    row_bank_select = ctk.CTkFrame(left_cfg, fg_color="transparent")
+    row_bank_select.pack(fill="x", padx=16, pady=(0, 8))
+
+    combo_banks = ctk.CTkComboBox(row_bank_select, values=["-- Đang tải ngân hàng đề... --"], state="readonly")
+    combo_banks.pack(side="left", fill="x", expand=True, padx=(0, 6))
+
+    btn_reload_banks = ctk.CTkButton(
+        row_bank_select,
+        text="🔄 Làm mới",
+        width=85,
+        fg_color=CyberpunkTheme.CYAN,
+        text_color="#000000",
+        font=ctk.CTkFont(size=12, weight="bold"),
+        command=lambda: load_banks_only(),
+    )
+    btn_reload_banks.pack(side="right")
 
     ctk.CTkLabel(left_cfg, text="Tên kỳ thi:", font=ctk.CTkFont(size=12)).pack(anchor="w", padx=16, pady=(4, 2))
     entry_exam_name = ctk.CTkEntry(left_cfg)
@@ -94,27 +108,42 @@ def build_exam_po(root, request):
 
     var_shuffle = ctk.BooleanVar(value=True)
     chk_shuffle = ctk.CTkCheckBox(left_cfg, text="Xáo trộn câu hỏi & thứ tự đáp án (Shuffle)", variable=var_shuffle)
-    chk_shuffle.pack(anchor="w", padx=16, pady=(4, 12))
+    chk_shuffle.pack(anchor="w", padx=16, pady=(4, 4))
+
+    ctk.CTkLabel(
+        left_cfg,
+        text="💡 Random theo MSSV: Mỗi học sinh sẽ được Server tự động xáo trộn câu hỏi & đáp án A-B-C-D. Nếu điền 'Số câu hỏi' (vd 20/30), mỗi em sẽ nhận ngẫu nhiên một bộ câu hỏi khác nhau.",
+        font=ctk.CTkFont(size=11),
+        text_color=CyberpunkTheme.CYAN,
+        wraplength=380,
+        justify="left",
+    ).pack(anchor="w", padx=16, pady=(0, 12))
 
     def on_create_exam():
         sel = combo_banks.get()
         if not sel or not bank_items or sel.startswith("--"):
-            messagebox.showwarning("Cảnh báo", "Vui lòng chọn một ngân hàng đề hợp lệ!")
+            messagebox.showwarning("Cảnh báo", "Vui lòng chọn một ngân hàng đề hợp lệ hoặc bấm Làm mới!")
             return
 
-        # Tìm bank_id từ selection
-        selected_bank = None
-        for b in bank_items:
-            disp = f"#{b['id']} - {b['title']} ({b.get('question_count', 0)} câu)"
-            if disp == sel:
-                selected_bank = b
-                break
+        is_random_mode = sel.startswith("🎲")
+        if is_random_mode:
+            selected_bank = bank_items[0]
+            exam_title = entry_exam_name.get().strip()
+            if not exam_title.startswith("[RANDOM]"):
+                exam_title = f"[RANDOM] {exam_title}"
+        else:
+            selected_bank = None
+            for b in bank_items:
+                disp = f"#{b['id']} - {b['title']} ({b.get('question_count', 0)} câu)"
+                if disp == sel:
+                    selected_bank = b
+                    break
 
-        if not selected_bank:
-            messagebox.showwarning("Cảnh báo", "Không tìm thấy ngân hàng đề được chọn!")
-            return
+            if not selected_bank:
+                messagebox.showwarning("Cảnh báo", "Không tìm thấy ngân hàng đề được chọn!")
+                return
+            exam_title = entry_exam_name.get().strip()
 
-        exam_title = entry_exam_name.get().strip()
         if not exam_title:
             messagebox.showerror("Lỗi", "Vui lòng nhập tên kỳ thi!")
             return
@@ -306,23 +335,37 @@ def build_exam_po(root, request):
     scores_scroll = ctk.CTkScrollableFrame(right_report, fg_color="transparent")
     scores_scroll.pack(fill="both", expand=True, padx=12, pady=(0, 12))
 
-    def load_all_data():
-        def on_banks(res):
-            nonlocal bank_items
-            bank_items = res.get("banks", [])
-            if bank_items:
-                values = [f"#{b['id']} - {b['title']} ({b.get('question_count', 0)} câu)" for b in bank_items]
-                combo_banks.configure(values=values)
+    def on_banks(res):
+        nonlocal bank_items
+        bank_items = res.get("banks", [])
+        if bank_items:
+            values = []
+            values.append("🎲 [RANDOM ĐỀ] Bốc ngẫu nhiên đề cho mỗi học sinh")
+            for b in bank_items:
+                values.append(f"#{b['id']} - {b['title']} ({b.get('question_count', 0)} câu)")
+            combo_banks.configure(values=values)
+            if combo_banks.get() not in values:
                 combo_banks.set(values[0])
-            else:
-                combo_banks.configure(values=["-- Chưa có ngân hàng đề nào (Hãy bấm Nhập đề) --"])
-                combo_banks.set("-- Chưa có ngân hàng đề nào (Hãy bấm Nhập đề) --")
+        else:
+            combo_banks.configure(values=["-- Chưa có ngân hàng đề nào (Hãy bấm Nhập đề) --"])
+            combo_banks.set("-- Chưa có ngân hàng đề nào (Hãy bấm Nhập đề) --")
+
+    def load_banks_only():
+        combo_banks.configure(values=["-- Đang tải ngân hàng đề... --"])
+        combo_banks.set("-- Đang tải ngân hàng đề... --")
+        request("exam.banks.list", on_banks)
+
+    def load_all_data():
+        load_banks_only()
 
         def on_active_exam(res):
             exam = res.get("exam")
             if exam:
+                title = exam.get('title', '')
+                is_rnd = title.startswith("[RANDOM]")
+                mode_str = " (🎲 Random đề theo từng MSSV)" if is_rnd else ""
                 lbl_active_title.configure(
-                    text=f"Kỳ thi hiện tại: #{exam.get('id')} - {exam.get('title')}\nNgân hàng đề: {exam.get('bank_title', '')} | Thời gian: {exam.get('duration_minutes')}p"
+                    text=f"Kỳ thi hiện tại: #{exam.get('id')} - {title}{mode_str}\nNgân hàng đề: {exam.get('bank_title', '')} | Thời gian: {exam.get('duration_minutes')}p"
                 )
             else:
                 lbl_active_title.configure(text="Chưa có kỳ thi nào được chọn (Hãy tạo kỳ thi ở trên)")
@@ -369,10 +412,10 @@ def build_exam_po(root, request):
 
                 ctk.CTkLabel(row, text=status, width=100, anchor="center", text_color=st_color).pack(side="left", padx=4)
 
-        request("exam.banks.list", on_banks)
         request("exam.active.get", on_active_exam)
         request("exam.config.get", on_cfg)
         request("exam.students.list", on_students)
 
+    frame.load_data = load_all_data
     frame.after(600, load_all_data)
     return frame

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import random
 from abc import ABC, abstractmethod
@@ -376,6 +377,14 @@ class PostgresExamRepository(ExamRepository):
         shuffle = exam["shuffle"]
 
         with self._get_connection() as conn:
+            # Chế độ Random đề: Bốc ngẫu nhiên ngân hàng đề cho từng học sinh dựa theo MSSV
+            if exam.get("title", "").startswith("[RANDOM]"):
+                banks = self.list_question_banks()
+                if banks:
+                    hash_val = int(hashlib.md5(f"{exam_id}:{student_id}".encode("utf-8")).hexdigest(), 16)
+                    assigned_bank = banks[hash_val % len(banks)]
+                    bank_id = assigned_bank["id"]
+
             rows = conn.execute(
                 "SELECT id, q_no, content FROM questions WHERE bank_id = %s ORDER BY q_no",
                 (bank_id,),
@@ -460,16 +469,22 @@ class PostgresExamRepository(ExamRepository):
             if submitted_answers is None:
                 submitted_answers = self.get_student_submissions(exam_id, student_id)
 
-            keys_pts = conn.execute(
-                "SELECT id, answer_key, points FROM questions WHERE bank_id = %s",
-                (bank_id,),
-            ).fetchall()
+            student_questions = self.load_exam_for_student(exam_id, student_id)
+            allocated_qids = {q["question_id"] for q in student_questions}
+
+            if allocated_qids:
+                keys_pts = conn.execute(
+                    "SELECT id, answer_key, points FROM questions WHERE id = ANY(%s)",
+                    (list(allocated_qids),),
+                ).fetchall()
+            else:
+                keys_pts = conn.execute(
+                    "SELECT id, answer_key, points FROM questions WHERE bank_id = %s",
+                    (bank_id,),
+                ).fetchall()
 
             keys = {r[0]: r[1] for r in keys_pts}
             pts = {r[0]: float(r[2]) for r in keys_pts}
-
-            student_questions = self.load_exam_for_student(exam_id, student_id)
-            allocated_qids = {q["question_id"] for q in student_questions}
 
             total_score = 0.0
             correct_count = 0
@@ -489,7 +504,13 @@ class PostgresExamRepository(ExamRepository):
         allocated_qids = {q["question_id"] for q in student_questions}
         bank_id = exam["bank_id"]
         with self._get_connection() as conn:
-            rows = conn.execute("SELECT id, points FROM questions WHERE bank_id = %s", (bank_id,)).fetchall()
+            if allocated_qids:
+                rows = conn.execute(
+                    "SELECT id, points FROM questions WHERE id = ANY(%s)",
+                    (list(allocated_qids),),
+                ).fetchall()
+            else:
+                rows = conn.execute("SELECT id, points FROM questions WHERE bank_id = %s", (bank_id,)).fetchall()
             pts = {r[0]: float(r[1]) for r in rows}
             if allocated_qids:
                 return float(round(sum(pts.get(qid, 1.0) for qid in allocated_qids), 2))
@@ -729,6 +750,13 @@ class InMemoryExamRepository(ExamRepository):
         count = exam["question_count"]
         shuffle = exam["shuffle"]
 
+        if exam.get("title", "").startswith("[RANDOM]"):
+            banks = self.list_question_banks()
+            if banks:
+                hash_val = int(hashlib.md5(f"{exam_id}:{student_id}".encode("utf-8")).hexdigest(), 16)
+                assigned_bank = banks[hash_val % len(banks)]
+                bank_id = assigned_bank["id"]
+
         q_list = list(self.questions.get(bank_id, []))
         rng = random.Random(f"{bank_id}:{student_id}")
         if shuffle:
@@ -797,9 +825,12 @@ class InMemoryExamRepository(ExamRepository):
             raise ValueError(f"Kỳ thi #{exam_id} không tồn tại")
 
         bank_id = exam["bank_id"]
-        q_list = self.questions.get(bank_id, [])
-        keys = {q["id"]: q["answer_key"] for q in q_list}
-        pts = {q["id"]: q["points"] for q in q_list}
+        keys = {}
+        pts = {}
+        for ql in self.questions.values():
+            for q in ql:
+                keys[q["id"]] = q["answer_key"]
+                pts[q["id"]] = q.get("points", 1.0)
 
         if submitted_answers is None:
             submitted_answers = self.get_student_submissions(exam_id, student_id)
@@ -823,12 +854,13 @@ class InMemoryExamRepository(ExamRepository):
             return 0.0
         student_questions = self.load_exam_for_student(exam_id, student_id)
         allocated_qids = {q["question_id"] for q in student_questions}
-        bank_id = exam["bank_id"]
-        q_list = self.questions.get(bank_id, [])
-        pts = {q["id"]: float(q.get("points", 1.0)) for q in q_list}
+        pts = {}
+        for ql in self.questions.values():
+            for q in ql:
+                pts[q["id"]] = float(q.get("points", 1.0))
         if allocated_qids:
             return float(round(sum(pts.get(qid, 1.0) for qid in allocated_qids), 2))
-        return float(round(sum(pts.values()) if pts else float(exam.get("question_count") or len(q_list) or 1.0), 2))
+        return float(round(sum(pts.values()) if pts else float(exam.get("question_count") or 1.0), 2))
 
     def get_exam_student_ids(self, exam_id: int) -> List[str]:
         return list({s_id for (ex_id, s_id, _qid) in self.submissions.keys() if ex_id == exam_id})

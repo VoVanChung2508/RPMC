@@ -123,6 +123,8 @@ class RPMCApp(ctk.CTk):
         page = self.pages.get(name)
         if page is not None:
             page.tkraise()
+            if hasattr(page, "load_data"):
+                self.after(50, page.load_data)
 
     def _maybe_auto_connect(self) -> None:
         host = self.host_entry.get().strip() or "127.0.0.1"
@@ -194,6 +196,10 @@ class RPMCApp(ctk.CTk):
             if self.target_agent.get() not in clients:
                 self.target_agent.set(clients[0] if clients else "")
             self.target_menu.configure(state="normal" if clients else "disabled")
+            # Tự động làm mới dữ liệu trang hiện tại (ví dụ PO hoặc SM)
+            current_page = self.pages.get(self.current_role)
+            if current_page is not None and hasattr(current_page, "load_data"):
+                self.after(50, current_page.load_data)
         if callback is not None:
             callback(result)
 
